@@ -108,7 +108,7 @@ Prinsip desain:
 
 1. **Jalankan backend** (Docker):
    ```powershell
-   copy .env.docker.example .env      # isi OPENAI_API_KEY & TRADE_PILOT_API_KEY
+   copy .env.example .env      # isi OPENAI_API_KEY & TRADE_PILOT_API_KEY
    docker compose up -d --build
    ```
 2. **Terapkan migrasi** tabel `tp_*`:
@@ -1449,7 +1449,7 @@ WHERE user_id = '<opaque-id>' AND mode = 'demo';
   `no-new-privileges`, `/tmp` tmpfs 64 MB.
 
 ```powershell
-copy .env.docker.example .env
+copy .env.example .env
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail 100 app
@@ -1606,4 +1606,4 @@ Uji manual minimal sebelum go-live:
 | `lib/db/migrations/0001_trade_pilot_v1.sql` | Migrasi SQL |
 | `artifacts/ai-trading/src/components/analysis-levels-chart.tsx` | Komponen chart + `tradePilotV1AnalysisToTradePlan()` |
 | `docs/TRADE_PILOT_V1_OPENAPI.yaml` | Kontrak OpenAPI |
-| `Dockerfile`, `compose.yaml`, `.env.docker.example` | Deployment |
+| `Dockerfile`, `compose.yaml`, `.env.example` | Deployment |
