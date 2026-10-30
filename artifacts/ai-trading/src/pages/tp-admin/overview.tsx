@@ -324,7 +324,7 @@ function CreditsPanel({ data }: { data: Overview }) {
   const { t, lang } = useTranslation();
   const num = (value: number) => formatNumber(value, lang);
   const periodLabel = (period: string) =>
-    period === "daily" ? t.tpAdmin.period_daily : period === "weekly" ? t.tpAdmin.period_weekly : t.tpAdmin.period_monthly;
+    period === "never" ? t.tpAdmin.period_never : period === "daily" ? t.tpAdmin.period_daily : period === "weekly" ? t.tpAdmin.period_weekly : t.tpAdmin.period_monthly;
 
   return (
     <Panel

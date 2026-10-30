@@ -107,7 +107,7 @@ export default function TpAdminUserDetailPage({ params }: { params: { userId: st
                         <div>
                           <CreditCell credit={credit} />
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {fill(t.tpAdmin.resets, { date: formatDateTime(credit.resetsAt, lang) })}
+                            {credit.resetsAt ? fill(t.tpAdmin.resets, { date: formatDateTime(credit.resetsAt, lang) }) : t.tpAdmin.period_never}
                           </p>
                         </div>
                       ),

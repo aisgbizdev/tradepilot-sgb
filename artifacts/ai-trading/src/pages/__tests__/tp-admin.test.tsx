@@ -421,7 +421,7 @@ describe("TradePilot admin console", () => {
         (url) => (url.includes("/api/auth/me") ? jsonResponse({ ...TEST_USER, role: "super_admin" }) : null),
         (url, init) => {
           if (url.includes("/api/admin/trade-pilot/settings/quota") && init?.method === "PUT") {
-            return jsonResponse({ quota: { demo: { allowance: 10, period: "daily" }, real: { allowance: 50, period: "monthly" } }, applied: { demo: 3 } });
+            return jsonResponse({ quota: { demo: { allowance: 10, period: "never" }, real: { allowance: 50, period: "monthly" } }, applied: { demo: 3 } });
           }
           if (url.includes("/api/admin/trade-pilot/settings") && (init?.method ?? "GET") === "GET") return jsonResponse(settings);
           return null;
@@ -433,6 +433,8 @@ describe("TradePilot admin console", () => {
     renderPage(<TpAdminQuotaSettingsPage />);
     const demo = await screen.findByTestId("input-quota-demo");
     fireEvent.change(demo, { target: { value: "10" } });
+    fireEvent.change(screen.getByTestId("select-quota-period-demo"), { target: { value: "never" } });
+    expect(screen.getByTestId("select-quota-period-demo")).toHaveValue("never");
     fireEvent.click(screen.getByText("Terapkan jumlah kuota ke periode berjalan"));
 
     const save = screen.getByTestId("button-quota-save");
@@ -443,7 +445,7 @@ describe("TradePilot admin console", () => {
     await waitFor(() => {
       const request = calls.find((call) => call.url.includes("/settings/quota") && call.method === "PUT");
       expect(JSON.parse(request?.body ?? "{}")).toEqual({
-        demo: { allowance: 10, period: "daily" },
+        demo: { allowance: 10, period: "never" },
         real: { allowance: 50, period: "monthly" },
         applyToCurrentPeriod: true,
       });

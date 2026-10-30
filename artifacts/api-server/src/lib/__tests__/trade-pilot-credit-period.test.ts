@@ -1,13 +1,54 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../db", () => ({ db: {}, pool: {} }));
+const { creditDb, updates } = vi.hoisted(() => {
+  const updates: Record<string, unknown>[] = [];
+  const creditDb = { insert: vi.fn(), select: vi.fn(), update: vi.fn() };
+  return { creditDb, updates };
+});
+vi.mock("../db", () => ({ db: creditDb, pool: {} }));
 
-import { creditPeriodWindow } from "../trade-pilot";
+import { creditPeriodWindow, getTradePilotCredit } from "../trade-pilot";
+import { _setTradePilotSettingsCache } from "../trade-pilot-settings";
+
+afterEach(() => {
+  _setTradePilotSettingsCache({ quota: null });
+  vi.clearAllMocks();
+  updates.length = 0;
+});
+
+describe("non-resetting credit balance", () => {
+  it("preserves exhausted credits even when the old reset date has expired", async () => {
+    _setTradePilotSettingsCache({ quota: {
+      demo: { allowance: 5, period: "never" }, real: { allowance: 50, period: "monthly" },
+    } });
+    creditDb.insert.mockImplementation(() => ({ values: () => ({ onConflictDoNothing: async () => {} }) }));
+    creditDb.select.mockImplementation(() => ({ from: () => ({ where: () => ({ limit: async () => [{
+      createdAt: new Date("2026-01-01T00:00:00Z"), allowance: 5, consumed: 5,
+      resetsAt: new Date("2026-01-02T00:00:00Z"),
+    }] }) }) }));
+    creditDb.update.mockImplementation(() => ({ set: (value: Record<string, unknown>) => {
+      updates.push(value);
+      return { where: async () => {} };
+    } }));
+    const result = await getTradePilotCredit("test-user", "demo");
+    expect(result).toMatchObject({ allowance: 5, consumed: 5, remaining: 0, resetsAt: null });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).not.toHaveProperty("consumed");
+    expect(updates[0].resetsAt).toEqual(new Date("9999-12-31T00:00:00.000Z"));
+  });
+});
 
 // Helper: waktu WIB -> Date.
 const wib = (iso: string) => new Date(`${iso}+07:00`);
 
 describe("creditPeriodWindow (berjangkar pada pertama kali pakai)", () => {
+  it("never keeps the same window across daily, weekly and monthly boundaries", () => {
+    const anchor = wib("2026-10-29T13:12:00");
+    const first = creditPeriodWindow("never", anchor, anchor);
+    expect(first.start).toEqual(anchor);
+    expect(first.end.toISOString()).toBe("9999-12-31T00:00:00.000Z");
+    expect(creditPeriodWindow("never", anchor, wib("2028-12-31T23:59:00"))).toEqual(first);
+  });
   it("bulanan: reset di tanggal yang sama setiap bulan pukul 00:00 WIB", () => {
     const anchor = wib("2026-10-29T13:12:00");
     expect(creditPeriodWindow("monthly", anchor, wib("2026-10-29T13:15:00"))).toEqual({

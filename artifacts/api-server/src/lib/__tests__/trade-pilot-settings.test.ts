@@ -37,6 +37,12 @@ describe("analysisPauseReason", () => {
 });
 
 describe("settings validation", () => {
+  it("accepts non-resetting quotas for both modes", () => {
+    expect(quotaSettingsSchema.safeParse({
+      demo: { allowance: 5, period: "never" },
+      real: { allowance: 50, period: "never" },
+    }).success).toBe(true);
+  });
   it("rejects unknown toggle keys and invalid quota values", () => {
     expect(availabilitySettingsSchema.safeParse({ enabled: true, instruments: { btc: false } }).success).toBe(false);
     expect(quotaSettingsSchema.safeParse({

@@ -575,7 +575,7 @@ function creditView(row: Row | undefined, mode: (typeof TP_MODES)[number]) {
     allowance,
     consumed,
     remaining: Math.max(allowance - consumed, 0),
-    resetsAt: iso(row.resets_at),
+    resetsAt: iso(row.resets_at)?.startsWith("9999-") ? null : iso(row.resets_at),
     inPeriod,
   };
 }
@@ -855,7 +855,7 @@ router.get("/admin/trade-pilot/credits-alerts", requireAdmin, handler(async (req
       mode: String(r.mode),
       allowance: num(r.allowance),
       consumed: num(r.consumed),
-      resetsAt: iso(r.resets_at),
+      resetsAt: iso(r.resets_at)?.startsWith("9999-") ? null : iso(r.resets_at),
       updatedAt: iso(r.updated_at),
     })),
     alerts: alerts.map((a) => ({
@@ -998,6 +998,15 @@ router.put("/admin/trade-pilot/settings/quota", requireSuperAdmin, handler(async
   await refreshTradePilotSettingsIfStale(true);
   const before = currentQuotaSettings();
   await saveTradePilotSetting("quota", next, Number(req.userId));
+  for (const mode of TP_MODES) {
+    if (next[mode].period === "never") {
+      await rows(sql`update tp_credit_balance set resets_at = '9999-12-31T00:00:00Z'::timestamptz,
+        updated_at = now() where mode = ${mode} returning user_id`);
+    } else if (before[mode].period === "never") {
+      await rows(sql`update tp_credit_balance set resets_at = now(), updated_at = now()
+        where mode = ${mode} returning user_id`);
+    }
+  }
 
   // Opsional: terapkan ke periode berjalan hanya untuk saldo yang masih
   // memakai kuota standar lama (penyesuaian manual per pengguna tidak ditimpa).

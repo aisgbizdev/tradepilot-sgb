@@ -28,7 +28,7 @@ export default function TpAdminCreditsAlertsPage() {
   const data = query.data;
   const num = (value: number) => formatNumber(value, lang);
   const periodLabel = (period: string) =>
-    period === "daily" ? t.tpAdmin.period_daily : period === "weekly" ? t.tpAdmin.period_weekly : t.tpAdmin.period_monthly;
+    period === "never" ? t.tpAdmin.period_never : period === "daily" ? t.tpAdmin.period_daily : period === "weekly" ? t.tpAdmin.period_weekly : t.tpAdmin.period_monthly;
 
   return (
     <AdminShell>
@@ -87,7 +87,7 @@ export default function TpAdminCreditsAlertsPage() {
                           <td className={td}><ModeBadge mode={row.mode} /></td>
                           <td className={`${td} tabular text-right`}>{num(row.consumed)}/{num(row.allowance)}</td>
                           <td className={`${td} text-muted-foreground`}>{formatDateTime(row.updatedAt, lang)}</td>
-                          <td className={`${td} text-muted-foreground`}>{formatDateTime(row.resetsAt, lang)}</td>
+                          <td className={`${td} text-muted-foreground`}>{row.resetsAt ? formatDateTime(row.resetsAt, lang) : t.tpAdmin.period_never}</td>
                         </tr>
                       ))}
                     </tbody>

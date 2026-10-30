@@ -1,3 +1,11 @@
+## [Unreleased]
+
+### Added
+- Opsi periode kredit `never` (Tidak direset / Never resets) untuk demo dan real pada pengaturan kuota admin dan konfigurasi environment. Saldo terpakai dipertahankan saat menonaktifkan reset; saldo habis tetap 0 sampai admin menyesuaikannya. API menampilkan `resetsAt: null` untuk saldo tanpa reset; penyimpanan memakai timestamp sentinel agar tidak memerlukan migrasi database.
+
+### Changed
+- Label periode dan tanggal reset pada ringkasan, kredit/alert, serta detail pengguna mendukung tanpa reset. Menambahkan key locale `tpAdmin.period_never` dan memperjelas teks konfirmasi pada ID dan EN; dokumentasi konfigurasi dan kontrak OpenAPI diselaraskan. Kembali ke periode berkala memulai ulang periode pada akses kredit berikutnya.
+
 ## [Unreleased] — Web TP jadi konsol admin TradePilot v1 (2026-10-28)
 
 ### Added
@@ -18,6 +26,9 @@
 - Redesain menyeluruh konsol admin TradePilot menjadi command center operasional berbasis graphite dan aksen emas SGB: shell desktop/mobile baru, drawer responsif, hierarki tipografi, KPI, chart, panel, filter, tabel, form sensitif, detail audit inline, state interaksi, serta palet light/dark yang konsisten. Kontrak API dan struktur data tetap dipertahankan.
 - Seluruh halaman web setelah login hanya untuk `admin`/`super_admin`; user biasa melihat halaman "Khusus admin". Login mengarah ke `/admin`, `/` mengarah ke konsol atau login, link pendaftaran dihapus dari halaman login.
 - Trade Pilot v1 menerima timeframe `30` (label `30m`, masa berlaku sinyal 2 jam).
+
+### Fixed
+- Membatasi middleware CORS ke endpoint `/api` dan `/v1/trade-pilot` agar bundle CSS/JS frontend tetap dapat dilayani melalui domain preview seperti Cloudflare Quick Tunnel tanpa berubah menjadi respons error HTML; request API dengan origin yang sama persis dengan scheme dan host aktif kini diizinkan agar login dari URL tunnel yang berganti-ganti tetap berfungsi, sementara request cross-origin tetap wajib melewati allowlist.
 
 ### Removed
 - Menghapus login Google/Facebook/TikTok dan seluruh ajakan pendaftaran publik dari halaman login web admin; autentikasi native aplikasi tetap tidak berubah.

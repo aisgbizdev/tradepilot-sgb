@@ -105,12 +105,26 @@ const PUBLIC_BASE_ORIGIN = getConfiguredPublicBaseOrigin(
   process.env["PUBLIC_BASE_URL"],
 );
 
-app.use(
-  cors({
+const apiCors = cors<Request>((req, optionsCallback) => {
+  const host = req.get("host");
+  let requestOrigin: string | undefined;
+
+  if (host) {
+    try {
+      requestOrigin = new URL(`${req.protocol}://${host}`).origin;
+    } catch {
+      // An invalid Host header must not accidentally widen CORS.
+    }
+  }
+
+  optionsCallback(null, {
     origin(origin, callback) {
       // No Origin header at all (native apps, curl, server-to-server) —
       // nothing for a browser-enforced CORS check to protect here.
       if (!origin) return callback(null, true);
+      // Browser calls through preview/tunnel domains are still same-origin
+      // when their scheme + host match the request received by Express.
+      if (origin === requestOrigin) return callback(null, true);
       if (origin === PRODUCTION_ORIGIN) return callback(null, true);
       if (origin === PUBLIC_BASE_ORIGIN) return callback(null, true);
       if (REPLIT_RUNTIME_ORIGINS.has(origin)) return callback(null, true);
@@ -123,8 +137,8 @@ app.use(
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
-  })
-);
+  });
+});
 app.use(cookieParser());
 app.use(
   express.json({
@@ -140,8 +154,11 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/v1/trade-pilot", tradePilotRouter);
-app.use("/api", router);
+// CORS protects cross-origin API access only. Applying it globally also
+// intercepts Vite's `crossorigin` bundle requests before express.static can
+// serve them, turning valid CSS/JS into 500 HTML responses on preview domains.
+app.use("/v1/trade-pilot", apiCors, tradePilotRouter);
+app.use("/api", apiCors, router);
 
 // In production the api-server also serves the ai-trading SPA so the
 // whole app runs as a single Cloud Run service on a single port.

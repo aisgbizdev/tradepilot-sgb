@@ -20,7 +20,7 @@ import { SCOPE_INSTRUMENTS, SCOPE_TIMEFRAMES, useScopeLabels } from "@/component
 
 type Message = { tone: "ok" | "error"; text: string };
 const MODES: Mode[] = ["demo", "real"];
-const PERIODS: CreditPeriod[] = ["daily", "weekly", "monthly"];
+const PERIODS: CreditPeriod[] = ["daily", "weekly", "monthly", "never"];
 const INSTRUMENTS = SCOPE_INSTRUMENTS;
 const TIMEFRAMES = SCOPE_TIMEFRAMES;
 
@@ -152,7 +152,7 @@ function QuotaEditor({
 }) {
   const { t } = useTranslation();
   const periodLabel = (period: CreditPeriod) =>
-    period === "daily" ? t.tpAdmin.period_daily : period === "weekly" ? t.tpAdmin.period_weekly : t.tpAdmin.period_monthly;
+    period === "never" ? t.tpAdmin.period_never : period === "daily" ? t.tpAdmin.period_daily : period === "weekly" ? t.tpAdmin.period_weekly : t.tpAdmin.period_monthly;
 
   return (
     <div className="rounded-[10px] border border-border bg-[hsl(var(--control))] p-4 sm:p-5">

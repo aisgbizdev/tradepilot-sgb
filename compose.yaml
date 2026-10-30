@@ -18,9 +18,9 @@ services:
       STATIC_DIR: /app/artifacts/ai-trading/dist/public
       DATABASE_URL: postgresql://${POSTGRES_USER:-tradepilot}:${POSTGRES_PASSWORD:-tradepilot-local-only}@db:5432/${POSTGRES_DB:-tradepilot}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:5000}
-      # Lets the local stack boot without embedding or requesting a real key.
-      # AI analysis remains unavailable until OPENAI_API_KEY is set in .env.
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-docker-local-key-not-configured}
+      # OPENAI_API_KEY comes only from .env (env_file above). Do not interpolate
+      # it here: ${...} reads the host shell first and a stale OS env var would
+      # override the key in .env.
       # The bundled Postgres service is reachable only on Compose's private
       # network and does not expose TLS. External production databases retain
       # the application's strict TLS default unless explicitly overridden.

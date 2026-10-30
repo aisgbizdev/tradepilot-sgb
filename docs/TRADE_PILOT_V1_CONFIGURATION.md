@@ -81,3 +81,8 @@ lib/db/migrations/0005_tp_settings.sql
 
 The migration is intentionally not executed automatically because it mutates
 the database and must be applied to the intended environment explicitly.
+
+
+### Kredit tanpa reset otomatis
+
+Periode kredit demo/real menerima `never` selain `daily`, `weekly`, dan `monthly`, melalui pengaturan kuota admin atau environment `TRADE_PILOT_DEMO_CREDIT_PERIOD` / `TRADE_PILOT_REAL_CREDIT_PERIOD`. Kredit awal diberikan sekali; kredit terpakai tidak dipulihkan otomatis. Saldo habis tetap 0 sampai admin menyesuaikan saldo. API mengembalikan `resetsAt: null`; client harus menampilkan Tidak direset dan tidak menghitung mundur reset. Beralih ke `never` mempertahankan pemakaian dan saldo saat ini. Kembali ke periode berkala memulai periode baru pada akses kredit berikutnya.

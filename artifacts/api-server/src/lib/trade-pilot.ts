@@ -164,7 +164,10 @@ function allowance(mode: TradePilotMode): number {
   return currentQuotaSettings()[mode].allowance;
 }
 
-type Period = "daily" | "weekly" | "monthly";
+type Period = "daily" | "weekly" | "monthly" | "never";
+
+// Internal sentinel keeps the existing NOT NULL timestamp schema compatible.
+export const NEVER_RESET_AT = "9999-12-31T00:00:00.000Z";
 
 /** Kebijakan kuota aktif per mode (untuk dashboard admin). */
 export function tradePilotCreditPolicy(mode: TradePilotMode): { allowance: number; period: Period } {
@@ -196,6 +199,7 @@ function wibMidnightOf(year: number, month: number, day: number): number {
  * - daily:   tiap hari pukul 00:00 WIB.
  */
 export function creditPeriodWindow(period: Period, anchor: Date, now = new Date()): { start: Date; end: Date } {
+  if (period === "never") return { start: new Date(anchor), end: new Date(NEVER_RESET_AT) };
   const today = wibDate(now.getTime());
   const todayStart = wibMidnightOf(today.year, today.month, today.day);
   if (period === "daily") return { start: new Date(todayStart), end: new Date(todayStart + DAY) };
@@ -279,7 +283,7 @@ async function ensureCredit(userId: string, mode: TradePilotMode) {
     userId, mode, allowance: allowance(mode), consumed: 0,
     periodStart: window.start, resetsAt: window.end,
   }).onConflictDoNothing();
-  await db.update(tradePilotCreditBalances).set({
+  if (configuredPeriod(mode) !== "never") await db.update(tradePilotCreditBalances).set({
     allowance: allowance(mode), consumed: 0, periodStart: window.start,
     resetsAt: window.end, updatedAt: now,
   }).where(and(
@@ -294,7 +298,7 @@ async function ensureCredit(userId: string, mode: TradePilotMode) {
   }).where(and(
     eq(tradePilotCreditBalances.userId, userId),
     eq(tradePilotCreditBalances.mode, mode),
-    gt(tradePilotCreditBalances.resetsAt, now),
+    configuredPeriod(mode) === "never" ? undefined : gt(tradePilotCreditBalances.resetsAt, now),
     ne(tradePilotCreditBalances.resetsAt, window.end),
   ));
   const [row] = await db.select().from(tradePilotCreditBalances).where(and(
@@ -309,7 +313,7 @@ function creditView(mode: TradePilotMode, row: { allowance: number; consumed: nu
     allowance: row.allowance,
     consumed: row.consumed,
     remaining: Math.max(0, row.allowance - row.consumed),
-    resetsAt: row.resetsAt.toISOString(),
+    resetsAt: configuredPeriod(mode) === "never" ? null : row.resetsAt.toISOString(),
     source: "api" as const,
   };
 }

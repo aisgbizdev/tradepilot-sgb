@@ -44,7 +44,7 @@ export type Overview = {
   credits: Array<{
     mode: Mode;
     allowance: number;
-    period: "daily" | "weekly" | "monthly";
+    period: "daily" | "weekly" | "monthly" | "never";
     usersInPeriod: number;
     consumed: number;
     allowanceTotal?: number;
@@ -174,14 +174,14 @@ export type CreditsAlerts = {
   policies: Array<{
     mode: Mode;
     allowance: number;
-    period: "daily" | "weekly" | "monthly";
+    period: "daily" | "weekly" | "monthly" | "never";
     usersInPeriod: number;
     consumed: number;
     allowanceTotal: number;
     exhausted: number;
     partiallyUsed: number;
   }>;
-  exhausted: Array<{ userId: string; mode: Mode; allowance: number; consumed: number; resetsAt: string; updatedAt: string }>;
+  exhausted: Array<{ userId: string; mode: Mode; allowance: number; consumed: number; resetsAt: string | null; updatedAt: string }>;
   alerts: Array<AlertRow & {
     userId: string;
     analysisId: string;
@@ -397,7 +397,7 @@ export function useAudit(params: { page?: number; action?: string; adminUserId?:
   return useQuery({ queryKey: ["tp-admin", url], queryFn: () => getJson<AuditPage>(url), placeholderData: keepPreviousData });
 }
 
-export type CreditPeriod = "daily" | "weekly" | "monthly";
+export type CreditPeriod = "daily" | "weekly" | "monthly" | "never";
 export type QuotaSettings = Record<Mode, { allowance: number; period: CreditPeriod }>;
 export type Toggles<K extends string> = Partial<Record<K, boolean>>;
 export type AvailabilitySettings = {

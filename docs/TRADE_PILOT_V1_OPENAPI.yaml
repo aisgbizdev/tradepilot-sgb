@@ -304,7 +304,7 @@ components:
         allowance: { type: integer }
         consumed: { type: integer }
         remaining: { type: integer }
-        resetsAt: { type: string, format: date-time }
+        resetsAt: { type: string, format: date-time, nullable: true, description: "Null when automatic credit reset is disabled." }
         source: { $ref: '#/components/schemas/DataSource' }
     Indicator:
       type: object

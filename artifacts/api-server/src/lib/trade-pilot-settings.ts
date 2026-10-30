@@ -14,7 +14,7 @@ import { logger } from "./logger";
 export const SETTING_MODES = ["demo", "real"] as const;
 export const SETTING_INSTRUMENTS = ["gold", "brent", "hang-seng", "nikkei"] as const;
 export const SETTING_TIMEFRAMES = ["1", "5", "15", "30", "60", "240", "D", "W", "M"] as const;
-export const SETTING_PERIODS = ["daily", "weekly", "monthly"] as const;
+export const SETTING_PERIODS = ["daily", "weekly", "monthly", "never"] as const;
 
 export type CreditPeriod = (typeof SETTING_PERIODS)[number];
 type Mode = (typeof SETTING_MODES)[number];
@@ -59,7 +59,7 @@ function positiveEnv(name: string, fallback: number): number {
 
 function envPeriod(mode: Mode): CreditPeriod {
   const value = process.env[mode === "demo" ? "TRADE_PILOT_DEMO_CREDIT_PERIOD" : "TRADE_PILOT_REAL_CREDIT_PERIOD"];
-  return value === "daily" || value === "weekly" || value === "monthly" ? value : mode === "demo" ? "daily" : "monthly";
+  return value === "daily" || value === "weekly" || value === "monthly" || value === "never" ? value : mode === "demo" ? "daily" : "monthly";
 }
 
 export function defaultQuotaSettings(): QuotaSettings {
