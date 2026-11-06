@@ -67,22 +67,6 @@ function buildLimiter(opts: RateLimitOptions) {
   return Object.assign(middleware, { store });
 }
 
-export const forgotPasswordQuestionLimiter = buildLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  keyFn: (req) => `${clientIp(req)}|${emailKeyPart(req)}`,
-  message:
-    "Terlalu banyak permintaan reset password. Coba lagi dalam beberapa menit. / Too many password reset requests. Try again in a few minutes.",
-});
-
-export const forgotPasswordVerifyLimiter = buildLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  keyFn: (req) => `${clientIp(req)}|${emailKeyPart(req)}`,
-  message:
-    "Terlalu banyak percobaan jawaban keamanan. Akun terkunci sementara. / Too many security answer attempts. Account locked temporarily.",
-});
-
 // /auth/login runs bcrypt.compare on every request — that's CPU-expensive by
 // design. Without a limiter it's a cheap DoS vector and an open door for
 // credential-stuffing. Keying on `ip|email` lets honest users on a shared
@@ -199,17 +183,6 @@ export const reauthLimiter = buildLimiter({
   },
   message:
     "Terlalu banyak percobaan verifikasi ulang. Coba lagi nanti. / Too many re-authentication attempts. Try again later.",
-});
-
-// /auth/forgot-password/reset is already gated by a 64-char crypto-random token,
-// but a per-IP limiter is consistent with the rest of the reset flow and stops
-// trivial flooding of the bcrypt path on the success branch.
-export const forgotPasswordResetLimiter = buildLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  keyFn: (req) => clientIp(req),
-  message:
-    "Terlalu banyak percobaan reset password. Coba lagi dalam beberapa menit. / Too many password reset attempts. Try again in a few minutes.",
 });
 
 // Per-user limiter for POST /api/push/test. Keyed off `req.userId`, so it
@@ -383,11 +356,8 @@ export const webHandoffConsumeLimiter = buildLimiter({
 setInterval(() => {
   const now = Date.now();
   for (const limiter of [
-    forgotPasswordQuestionLimiter,
-    forgotPasswordVerifyLimiter,
     loginLimiter,
     registerLimiter,
-    forgotPasswordResetLimiter,
     pushTestLimiter,
     nativePushRegisterLimiter,
     accountDeletionLimiter,

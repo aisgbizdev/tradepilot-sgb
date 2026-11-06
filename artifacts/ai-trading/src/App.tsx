@@ -8,7 +8,6 @@ import { AuthProvider, useAuth } from "@/components/auth-provider";
 import { ProtectedRoute } from "@/components/protected-route";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
-import ForgotPasswordPage from "@/pages/forgot-password";
 import LegalPage from "@/pages/legal";
 import TpAdminOverviewPage from "@/pages/tp-admin/overview";
 import TpAdminAnalysesPage from "@/pages/tp-admin/analyses";
@@ -63,7 +62,6 @@ function Router() {
       <Switch>
         <Route path="/" component={HomeRedirect} />
         <Route path="/login" component={LoginPage} />
-        <Route path="/forgot-password" component={ForgotPasswordPage} />
         <Route path="/privacy">
           <LegalPage kind="privacy" />
         </Route>

@@ -2,9 +2,7 @@
  * Component test for the Login form (`src/pages/login.tsx`).
  *
  * Covers the happy-path render of the form fields and submit button,
- * the reset-success banner branch (driven by the
- * `password_reset_success` flag in `sessionStorage` left behind by the
- * forgot-password flow), and a real form submission that POSTs to
+ * and a real form submission that POSTs to
  * `/api/auth/login` with the typed-in credentials.
  *
  * The Login page is **not** mounted inside `<Layout>` so it does not
@@ -79,42 +77,16 @@ describe("LoginPage: happy-path render", () => {
     expect(screen.getByTestId("button-submit-login")).toBeInTheDocument();
     expect(screen.queryByTestId("button-social-signin-menu")).not.toBeInTheDocument();
     expect(screen.queryByTestId("button-google-signin")).not.toBeInTheDocument();
-    expect(screen.getByTestId("link-forgot-password")).toBeInTheDocument();
+    expect(screen.queryByTestId("link-forgot-password")).toBeNull();
     // Web TP khusus admin: tidak ada pendaftaran publik.
     expect(screen.queryByTestId("link-register")).toBeNull();
 
-    // Reset-success banner is hidden on a fresh load (no
-    // `password_reset_success` flag in sessionStorage).
-    expect(
-      screen.queryByTestId("banner-reset-success"),
-    ).not.toBeInTheDocument();
 
     // Let the AuthProvider settle so its query is not pending after
     // the test ends (avoids "act" warnings from React).
     await waitFor(() => {
       expect(screen.getByTestId("form-login")).toBeInTheDocument();
     });
-  });
-});
-
-describe("LoginPage: reset-success banner branch", () => {
-  it("renders the reset-success banner when sessionStorage has the password_reset_success flag set", async () => {
-    sessionStorage.setItem("password_reset_success", "1");
-    installFetchMock([loginHandler({})]);
-    const { Wrapper } = makeWrapper();
-
-    render(
-      <Wrapper>
-        <LoginPage />
-      </Wrapper>,
-    );
-
-    expect(
-      await screen.findByTestId("banner-reset-success"),
-    ).toBeInTheDocument();
-    // The flag is consumed on read, so it should be cleared from
-    // sessionStorage after the page mounts.
-    expect(sessionStorage.getItem("password_reset_success")).toBeNull();
   });
 });
 

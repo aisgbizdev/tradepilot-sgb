@@ -7,11 +7,10 @@ import { db } from "../lib/db";
 import {
   users,
   sessions,
-  passwordResetTokens,
   pushSubscriptions,
   nativePushDevices,
 } from "@workspace/db/schema";
-import { eq, and, gt, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, AuthRequest } from "../middleware/auth";
 import { createSingleSession, createHandoffSession, endSession } from "../lib/session";
@@ -22,11 +21,8 @@ import {
   resolveWebHandoffOrigin,
 } from "../lib/web-handoff";
 import {
-  forgotPasswordQuestionLimiter,
-  forgotPasswordVerifyLimiter,
   loginLimiter,
   registerLimiter,
-  forgotPasswordResetLimiter,
   accountDeletionLimiter,
   googleOAuthLimiter,
   googleNativeLoginLimiter,
@@ -128,24 +124,6 @@ const SECURITY_QUESTIONS = [
   "Nama sekolah dasar kamu?",
   "Nama teman terbaik masa kecil kamu?",
 ];
-
-// Persistent per-account lockout for /auth/forgot-password/verify. The
-// existing IP+email rate limiter (5/15min, in-memory) protects a single
-// IP+restart window; this layer persists across restarts and applies no
-// matter how many IPs the attacker rotates through.
-const MAX_FAILED_RESET_ATTEMPTS = 5;
-const RESET_LOCKOUT_MS = 15 * 60 * 1000;
-
-// Precomputed at startup so the /verify deny branches that don't have a
-// real user hash can still call `bcrypt.compare` against a cost-12 hash —
-// matching the cost used to hash real `securityAnswerHash` values in
-// register/change-security-question. Using `compare` (not `hash`) on the
-// dummy keeps the operation type identical to the wrong-answer branch,
-// closing the timing side-channel the architect review flagged.
-const DUMMY_SECURITY_ANSWER_HASH = bcrypt.hashSync(
-  "dummy_answer_to_prevent_timing_attack",
-  12
-);
 
 const registerSchema = z.object({
   email: z.string().email("Format email tidak valid"),
@@ -1627,227 +1605,6 @@ router.patch("/auth/security-question", requireAuth, async (req: AuthRequest, re
   void notifyCriticalSecurityEvent(req.userId!, "security_question_changed");
 
   res.json({ message: "Pertanyaan keamanan berhasil diubah" });
-});
-
-const forgotPasswordQuestionSchema = z.object({
-  email: z.string().email("Format email tidak valid"),
-});
-
-const forgotPasswordVerifySchema = z.object({
-  email: z.string().email("Format email tidak valid"),
-  securityAnswer: z.string().min(1, "Jawaban keamanan wajib diisi"),
-});
-
-const forgotPasswordResetSchema = z.object({
-  resetToken: z.string().min(1, "Token wajib diisi"),
-  newPassword: z.string().min(6, "Password minimal 6 karakter"),
-});
-
-router.post("/auth/forgot-password/question", forgotPasswordQuestionLimiter, async (req, res) => {
-  const parsed = forgotPasswordQuestionSchema.safeParse(req.body);
-  if (!parsed.success) {
-    const first = parsed.error.errors[0];
-    res.status(400).json({ error: first?.message ?? "Email wajib diisi" });
-    return;
-  }
-  const { email } = parsed.data;
-
-  const [user] = await db
-    .select({ id: users.id, securityQuestion: users.securityQuestion })
-    .from(users)
-    .where(eq(users.email, email.toLowerCase()))
-    .limit(1);
-
-  res.json({
-    // Fall back to a canonical question for both "no such user" and
-    // "Google account with no security question" so neither is
-    // distinguishable from a real password account.
-    securityQuestion: user?.securityQuestion ?? SECURITY_QUESTIONS[0],
-    email: email.toLowerCase(),
-  });
-});
-
-router.post("/auth/forgot-password/verify", forgotPasswordVerifyLimiter, async (req, res) => {
-  const parsed = forgotPasswordVerifySchema.safeParse(req.body);
-  if (!parsed.success) {
-    const first = parsed.error.errors[0];
-    res.status(400).json({ error: first?.message ?? "Email dan jawaban wajib diisi" });
-    return;
-  }
-  const { email, securityAnswer } = parsed.data;
-
-  const [user] = await db
-    .select({
-      id: users.id,
-      securityAnswerHash: users.securityAnswerHash,
-      resetLockedUntil: users.resetLockedUntil,
-    })
-    .from(users)
-    .where(eq(users.email, email.toLowerCase()))
-    .limit(1);
-
-  const INVALID_MSG = "Jawaban keamanan tidak valid";
-
-  // Indistinguishable failure modes — every "deny" branch returns the
-  // same 401 + INVALID_MSG with no Retry-After header and runs (or
-  // mimics) a bcrypt operation for timing parity. This prevents an
-  // attacker who rotates IPs from telling apart:
-  //   (a) unknown email,
-  //   (b) existing email + wrong answer,
-  //   (c) existing email + correct answer but currently locked.
-  // Without this parity, a 429+Retry-After on (c) would leak which
-  // emails belong to real accounts — exactly the channel the IP limiter
-  // bypass would otherwise enable.
-  if (!user) {
-    // Use the same operation (compare) and same bcrypt cost (12) as the
-    // wrong-answer branch below, so an attacker rotating IPs can't tell
-    // unknown-email apart from existing-email-wrong-answer by timing.
-    await bcrypt.compare(securityAnswer, DUMMY_SECURITY_ANSWER_HASH);
-    res.status(401).json({ error: INVALID_MSG });
-    return;
-  }
-
-  // Google-OAuth account: no security-answer hash to match. Keep it
-  // timing- and response-indistinguishable from the unknown-email and
-  // wrong-answer branches so it doesn't leak that the email exists.
-  if (!user.securityAnswerHash) {
-    await bcrypt.compare(securityAnswer, DUMMY_SECURITY_ANSWER_HASH);
-    res.status(401).json({ error: INVALID_MSG });
-    return;
-  }
-
-  const now = new Date();
-
-  if (user.resetLockedUntil && user.resetLockedUntil > now) {
-    // Same parity reasoning as above: a locked existing account must
-    // be timing-indistinguishable from both unknown-email and
-    // existing-email-wrong-answer.
-    await bcrypt.compare(securityAnswer, DUMMY_SECURITY_ANSWER_HASH);
-    res.status(401).json({ error: INVALID_MSG });
-    return;
-  }
-
-  const valid = await bcrypt.compare(
-    securityAnswer.toLowerCase().trim(),
-    user.securityAnswerHash
-  );
-
-  if (!valid) {
-    // Atomic increment + conditional lockout, all evaluated in a
-    // single UPDATE so concurrent wrong attempts can't lose updates
-    // and bypass the threshold:
-    //
-    //   - If the previous lock window has just expired, the counter
-    //     resets to 1 (this attempt) and the lock is cleared. Without
-    //     this branch a stale `failed_reset_attempts >= threshold`
-    //     would re-lock the account on the very first post-expiry
-    //     typo.
-    //   - Otherwise increment by one. When the new count reaches
-    //     `MAX_FAILED_RESET_ATTEMPTS` we set `reset_locked_until` to
-    //     `now + RESET_LOCKOUT_MS` so the next attempt hits the lock
-    //     branch above (and gets the same generic 401 — see comment
-    //     up top).
-    const lockUntil = new Date(now.getTime() + RESET_LOCKOUT_MS);
-    await db
-      .update(users)
-      .set({
-        failedResetAttempts: sql`CASE
-          WHEN ${users.resetLockedUntil} IS NOT NULL AND ${users.resetLockedUntil} <= NOW() THEN 1
-          ELSE ${users.failedResetAttempts} + 1
-        END`,
-        resetLockedUntil: sql`CASE
-          WHEN ${users.resetLockedUntil} IS NOT NULL AND ${users.resetLockedUntil} <= NOW() THEN NULL
-          WHEN ${users.failedResetAttempts} + 1 >= ${MAX_FAILED_RESET_ATTEMPTS} THEN ${lockUntil}
-          ELSE ${users.resetLockedUntil}
-        END`,
-        updatedAt: now,
-      })
-      .where(eq(users.id, user.id));
-
-    res.status(401).json({ error: INVALID_MSG });
-    return;
-  }
-
-  // Correct answer — clear any prior failure state before issuing the
-  // reset token so the next reset cycle starts fresh.
-  await db
-    .update(users)
-    .set({
-      failedResetAttempts: 0,
-      resetLockedUntil: null,
-      updatedAt: now,
-    })
-    .where(eq(users.id, user.id));
-
-  await db.delete(passwordResetTokens).where(
-    eq(passwordResetTokens.userId, user.id)
-  );
-
-  const resetToken = generateToken();
-  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
-
-  await db.insert(passwordResetTokens).values({
-    userId: user.id,
-    token: resetToken,
-    expiresAt,
-  });
-
-  res.json({ resetToken, message: "Jawaban benar. Silakan reset password." });
-});
-
-router.post("/auth/forgot-password/reset", forgotPasswordResetLimiter, async (req, res) => {
-  const parsed = forgotPasswordResetSchema.safeParse(req.body);
-  if (!parsed.success) {
-    const first = parsed.error.errors[0];
-    res
-      .status(400)
-      .json({ error: first?.message ?? "Token dan password baru wajib diisi" });
-    return;
-  }
-  const { resetToken, newPassword } = parsed.data;
-
-  const [tokenRecord] = await db
-    .select()
-    .from(passwordResetTokens)
-    .where(
-      and(
-        eq(passwordResetTokens.token, resetToken),
-        gt(passwordResetTokens.expiresAt, new Date())
-      )
-    )
-    .limit(1);
-
-  if (!tokenRecord) {
-    // Reset tokens are authentication credentials — invalid or expired
-    // tokens are an authn failure (401), not a field-validation error (400).
-    res.status(401).json({ error: "Token tidak valid atau sudah kadaluarsa" });
-    return;
-  }
-
-  const passwordHash = await bcrypt.hash(newPassword, 12);
-
-  // Reset brute-force tracking too — a successful password change
-  // means the legitimate owner is back in control, so any prior
-  // failure state is no longer relevant.
-  await db
-    .update(users)
-    .set({
-      passwordHash,
-      failedResetAttempts: 0,
-      resetLockedUntil: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(users.id, tokenRecord.userId));
-
-  await db
-    .delete(passwordResetTokens)
-    .where(eq(passwordResetTokens.id, tokenRecord.id));
-
-  await db
-    .delete(sessions)
-    .where(eq(sessions.userId, tokenRecord.userId));
-
-  res.json({ message: "Password berhasil direset" });
 });
 
 // Store-readiness (P0): self-service account deletion. `DELETE /api/account`

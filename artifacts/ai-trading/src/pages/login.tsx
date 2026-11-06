@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v3";
-import { Eye, EyeOff, Loader2, LogIn, CheckCircle, ShieldCheck, LockKeyhole, BadgeCheck } from "lucide-react";
+import { Eye, EyeOff, Loader2, LogIn, ShieldCheck, LockKeyhole, BadgeCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -53,14 +53,6 @@ export default function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [showPassword, setShowPassword] = useState(false);
-  const [resetSuccess] = useState(() => {
-    const val = sessionStorage.getItem("password_reset_success");
-    if (val === "1") {
-      sessionStorage.removeItem("password_reset_success");
-      return true;
-    }
-    return false;
-  });
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -157,19 +149,6 @@ export default function LoginPage() {
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{t.auth.welcome_subtitle}</p>
             </div>
 
-        {resetSuccess && (
-          <div
-            className="flex items-start gap-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-4 mb-4"
-            data-testid="banner-reset-success"
-            role="alert"
-          >
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-green-800 dark:text-green-300">{t.auth.reset_success_title}</p>
-              <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">{t.auth.reset_success_subtitle}</p>
-            </div>
-          </div>
-        )}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-[0_18px_50px_-28px_rgba(0,0,0,0.45)] sm:p-7">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" data-testid="form-login">
@@ -261,13 +240,6 @@ export default function LoginPage() {
             </form>
           </Form>
 
-          <div className="mt-5 text-center">
-            <Link href="/forgot-password">
-              <button className="text-sm text-primary hover:underline font-medium" data-testid="link-forgot-password">
-                {t.auth.forgot_password}
-              </button>
-            </Link>
-          </div>
         </div>
 
             <div className="mt-5 flex items-start gap-3 rounded-xl border border-border bg-muted/45 p-4 text-sm text-muted-foreground">

@@ -1206,45 +1206,6 @@ export const GetMeResponse = zod.object({
 });
 
 /**
- * @summary Get security question for email
- */
-export const GetForgotPasswordQuestionBody = zod.object({
-  email: zod.string().email(),
-});
-
-export const GetForgotPasswordQuestionResponse = zod.object({
-  securityQuestion: zod.string(),
-  email: zod.string(),
-});
-
-/**
- * @summary Verify security answer and get reset token
- */
-export const VerifySecurityAnswerBody = zod.object({
-  email: zod.string().email(),
-  securityAnswer: zod.string(),
-});
-
-export const VerifySecurityAnswerResponse = zod.object({
-  resetToken: zod.string(),
-  message: zod.string(),
-});
-
-/**
- * @summary Reset password with token
- */
-export const resetPasswordBodyNewPasswordMin = 6;
-
-export const ResetPasswordBody = zod.object({
-  resetToken: zod.string(),
-  newPassword: zod.string().min(resetPasswordBodyNewPasswordMin),
-});
-
-export const ResetPasswordResponse = zod.object({
-  message: zod.string(),
-});
-
-/**
  * Returns a presigned GCS URL for direct upload. The client sends JSON
  * metadata here, then uploads the file directly to the returned URL.
  * @summary Request a presigned URL for file upload

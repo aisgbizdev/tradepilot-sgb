@@ -542,31 +542,6 @@ export interface LoginBody {
   rememberMe?: boolean;
 }
 
-export interface ForgotPasswordQuestionBody {
-  email: string;
-}
-
-export interface SecurityQuestionResponse {
-  securityQuestion: string;
-  email: string;
-}
-
-export interface VerifySecurityAnswerBody {
-  email: string;
-  securityAnswer: string;
-}
-
-export interface ResetTokenResponse {
-  resetToken: string;
-  message: string;
-}
-
-export interface ResetPasswordBody {
-  resetToken: string;
-  /** @minLength 6 */
-  newPassword: string;
-}
-
 export type UpdateProfileBodySelectedMode =
   (typeof UpdateProfileBodySelectedMode)[keyof typeof UpdateProfileBodySelectedMode];
 

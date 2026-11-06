@@ -9,13 +9,11 @@ import { db } from "../../lib/db";
 import {
   users,
   sessions,
-  passwordResetTokens,
   reauthTokens,
 } from "@workspace/db/schema";
 import {
   loginLimiter,
   registerLimiter,
-  forgotPasswordResetLimiter,
   googleOAuthLimiter,
   googleNativeLoginLimiter,
   appleNativeLoginLimiter,
@@ -110,9 +108,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (seededIds.length > 0) {
-    await db
-      .delete(passwordResetTokens)
-      .where(inArray(passwordResetTokens.userId, seededIds));
     await db.delete(sessions).where(inArray(sessions.userId, seededIds));
     await db.delete(users).where(inArray(users.id, seededIds));
   }
@@ -127,7 +122,6 @@ beforeEach(() => {
   // each one starts from a clean budget.
   loginLimiter.store.clear();
   registerLimiter.store.clear();
-  forgotPasswordResetLimiter.store.clear();
   googleOAuthLimiter.store.clear();
   googleNativeLoginLimiter.store.clear();
   appleNativeLoginLimiter.store.clear();
@@ -327,30 +321,6 @@ describe("POST /auth/register rate limiting", () => {
   }, 60_000);
 });
 
-describe("POST /auth/forgot-password/reset rate limiting", () => {
-  it("returns 429 once the per-IP limit is exceeded", async () => {
-    // 5 attempts with garbage tokens — each returns 401 (limit is 5/15min/ip).
-    for (let i = 0; i < 5; i++) {
-      const r = await request(app)
-        .post("/api/auth/forgot-password/reset")
-        .send({
-          resetToken: `bogus-${RUN_ID}-${randomBytes(8).toString("hex")}`,
-          newPassword: "Password123",
-        });
-      expect(r.status).toBe(401);
-    }
-    const blocked = await request(app)
-      .post("/api/auth/forgot-password/reset")
-      .send({
-        resetToken: `bogus-${RUN_ID}-${randomBytes(8).toString("hex")}`,
-        newPassword: "Password123",
-      });
-    expect(blocked.status).toBe(429);
-    expect(blocked.headers["retry-after"]).toBeDefined();
-    expect(blocked.body.error).toMatch(/(reset|password)/i);
-  });
-});
-
 // Regression: limiter middleware runs BEFORE the route's Zod schema, so
 // hostile payloads like `email: 123` or `email: {}` must never crash the
 // keyFn (or the route) into a 500. Each of these returns a clean 400.
@@ -382,27 +352,6 @@ describe("auth endpoints reject malformed body types without 500", () => {
         securityQuestion: SECURITY_QUESTION,
         securityAnswer: "answer",
       });
-    expect(r.status).toBe(400);
-  });
-
-  it("POST /auth/forgot-password/question with non-string email returns 400, not 500", async () => {
-    const r = await request(app)
-      .post("/api/auth/forgot-password/question")
-      .send({ email: 1 });
-    expect(r.status).toBe(400);
-  });
-
-  it("POST /auth/forgot-password/verify with non-string fields returns 400, not 500", async () => {
-    const r = await request(app)
-      .post("/api/auth/forgot-password/verify")
-      .send({ email: {}, securityAnswer: 12 });
-    expect(r.status).toBe(400);
-  });
-
-  it("POST /auth/forgot-password/reset with non-string fields returns 400, not 500", async () => {
-    const r = await request(app)
-      .post("/api/auth/forgot-password/reset")
-      .send({ resetToken: 1, newPassword: 2 });
     expect(r.status).toBe(400);
   });
 
