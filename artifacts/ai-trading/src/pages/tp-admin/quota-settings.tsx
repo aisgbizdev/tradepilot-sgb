@@ -167,7 +167,7 @@ function QuotaEditor({
           </div>
         </div>
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      <div className={`mt-4 grid gap-4 ${mode === "real" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>
         <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
           {t.tpAdmin.quota_allowance}
           <input
@@ -211,6 +211,26 @@ function QuotaEditor({
           />
           <span className="text-[11px] font-normal">{t.tpAdmin.quota_trial_hint}</span>
         </label>
+        {mode === "real" ? (
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+            {t.tpAdmin.quota_min_equity}
+            <input
+              type="number"
+              min={0}
+              max={1000000}
+              step={0.01}
+              placeholder={t.tpAdmin.quota_min_equity_none}
+              value={value.minEquityUsd ?? ""}
+              onChange={(event) => onChange({
+                ...value,
+                minEquityUsd: event.target.value === "" ? null : Number(event.target.value),
+              })}
+              className="tabular h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-ring/20"
+              data-testid="input-quota-min-equity-real"
+            />
+            <span className="text-[11px] font-normal">{t.tpAdmin.quota_min_equity_hint}</span>
+          </label>
+        ) : null}
       </div>
     </div>
   );

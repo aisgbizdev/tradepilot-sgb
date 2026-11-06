@@ -50,7 +50,7 @@ interface TradePilotRequest extends Request {
   tradePilotRequestId?: string;
   tradePilotLanguage?: TradePilotLanguage;
   tradePilotAllowedModes?: ReadonlySet<string> | null;
-  tradePilotRealEquity?: "positive" | "none" | "unknown" | null;
+  tradePilotRealEquityUsd?: number | null;
 }
 
 const router = Router();
@@ -114,9 +114,11 @@ function requireTradePilotService(req: TradePilotRequest, res: Response, next: N
   req.tradePilotAllowedModes = allowed
     ? new Set(allowed.split(",").map((value) => value.trim()).filter(Boolean))
     : null;
-  // Status equity akun live dari get-sgb; hanya dipakai untuk mode real.
+  // Equity akun live (USD) dari get-sgb; hanya dipakai untuk mode real.
+  // Angka desimal, "none" (tanpa akun live = 0), atau "unknown" (gagal dicek).
   const equity = (req.header("X-TradePilot-Real-Equity") ?? "").trim().toLowerCase();
-  req.tradePilotRealEquity = equity === "positive" || equity === "none" || equity === "unknown" ? equity : null;
+  const parsedEquity = /^-?\d{1,15}(\.\d{1,6})?$/.test(equity) ? Number(equity) : null;
+  req.tradePilotRealEquityUsd = equity === "none" ? 0 : parsedEquity;
   next();
 }
 
@@ -196,7 +198,7 @@ router.post("/analyses", handler(async (req, res) => {
       idempotencyKey,
       requestId: req.tradePilotRequestId!,
       language: lang(req),
-      realEquity: req.tradePilotRealEquity ?? null,
+      realEquityUsd: req.tradePilotRealEquityUsd ?? null,
       ...body.data,
     });
     res.status(201).json(result);

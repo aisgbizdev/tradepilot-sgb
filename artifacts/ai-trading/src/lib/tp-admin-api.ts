@@ -398,7 +398,7 @@ export function useAudit(params: { page?: number; action?: string; adminUserId?:
 }
 
 export type CreditPeriod = "daily" | "weekly" | "monthly" | "never";
-export type QuotaSettings = Record<Mode, { allowance: number; period: CreditPeriod; trialDays?: number | null }>;
+export type QuotaSettings = Record<Mode, { allowance: number; period: CreditPeriod; trialDays?: number | null; minEquityUsd?: number | null }>;
 export type Toggles<K extends string> = Partial<Record<K, boolean>>;
 export type AvailabilitySettings = {
   enabled: boolean;

@@ -115,7 +115,7 @@ function api(method: "get" | "post" | "put", path: string, userId: string) {
   return request(app)[method](`/v1/trade-pilot${path}`)
     .set("Authorization", `Bearer ${API_KEY}`)
     .set("X-TradePilot-User", userId)
-    .set("X-TradePilot-Real-Equity", "positive");
+    .set("X-TradePilot-Real-Equity", "250.00");
 }
 
 beforeAll(() => {
@@ -214,7 +214,7 @@ dbDescribe("Trade Pilot v1 with database", () => {
     expect(first.body.isNewUser).toBe(true);
     expect(first.body.credits.demo).toMatchObject({ mode: "demo", allowance: 3, consumed: 0, remaining: 3, expired: false, source: "api" });
     expect(first.body.credits.demo.trialEndsAt).toMatch(/T17:00:00.000Z$/);
-    expect(first.body.credits.real).toMatchObject({ mode: "real", allowance: 3, remaining: 3, trialEndsAt: null, expired: false });
+    expect(first.body.credits.real).toMatchObject({ mode: "real", allowance: 3, remaining: 3, trialEndsAt: null, expired: false, minEquityUsd: 10 });
     expect(first.body.histories).toEqual({ demo: [], real: [] });
     expect(first.body.latestAnalyses).toEqual({ demo: null, real: null });
     expect(first.body.timeframePerformance).toHaveLength(16);
@@ -307,7 +307,8 @@ dbDescribe("Trade Pilot v1 with database", () => {
 
   it("rejects real-mode analyses unless the live account has equity", async () => {
     const body = { instrumentId: "gold", mode: "real", timeframe: "60" };
-    for (const equity of ["none", "unknown", null]) {
+    // Default batas minimum $10: 9.99 ditolak, "none"/"unknown"/tanpa header juga.
+    for (const equity of ["9.99", "none", "unknown", null]) {
       _resetTradePilotRateLimit();
       const user = newUser();
       const call = api("post", "/analyses", user).set("Idempotency-Key", `equity-${equity ?? "missing"}-x`);

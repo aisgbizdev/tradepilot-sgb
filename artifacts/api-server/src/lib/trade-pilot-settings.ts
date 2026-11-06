@@ -27,6 +27,11 @@ const quotaModeSchema = z.object({
    * null = tanpa batas. Tidak diisi (data lama) = pakai default env.
    */
   trialDays: z.number().int().min(1).max(3650).nullable().optional(),
+  /**
+   * Equity minimum akun live (USD) agar mode ini bisa dipakai. Hanya berlaku
+   * untuk real. null = tanpa syarat equity. Tidak diisi = default env.
+   */
+  minEquityUsd: z.number().min(0).max(1_000_000).nullable().optional(),
 });
 
 export const quotaSettingsSchema = z.object({
@@ -67,6 +72,14 @@ function envPeriod(mode: Mode): CreditPeriod {
   return value === "daily" || value === "weekly" || value === "monthly" || value === "never" ? value : "daily";
 }
 
+function envMinEquity(name: string, fallback: number | null): number | null {
+  const raw = (process.env[name] ?? "").trim().toLowerCase();
+  if (raw === "") return fallback;
+  if (raw === "off" || raw === "none") return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 /** Hari masa berlaku dari env; "0"/"off"/"none" = tanpa batas. */
 function envTrialDays(name: string, fallback: number | null): number | null {
   const raw = (process.env[name] ?? "").trim().toLowerCase();
@@ -79,7 +92,7 @@ function envTrialDays(name: string, fallback: number | null): number | null {
 /**
  * Kebijakan standar:
  * - demo: 3 analisis/hari, berlaku 14 hari sejak pertama pakai demo.
- * - real: 3 analisis/hari tanpa batas waktu, selama akun live punya equity
+ * - real: 3 analisis/hari tanpa batas waktu, selama equity akun live >= $10
  *         (dicek di POST /analyses lewat header X-TradePilot-Real-Equity).
  */
 export function defaultQuotaSettings(): QuotaSettings {
@@ -88,11 +101,13 @@ export function defaultQuotaSettings(): QuotaSettings {
       allowance: positiveEnv("TRADE_PILOT_DEMO_ALLOWANCE", 3),
       period: envPeriod("demo"),
       trialDays: envTrialDays("TRADE_PILOT_DEMO_TRIAL_DAYS", 14),
+      minEquityUsd: null,
     },
     real: {
       allowance: positiveEnv("TRADE_PILOT_REAL_ALLOWANCE", 3),
       period: envPeriod("real"),
       trialDays: envTrialDays("TRADE_PILOT_REAL_TRIAL_DAYS", null),
+      minEquityUsd: envMinEquity("TRADE_PILOT_REAL_MIN_EQUITY_USD", 10),
     },
   };
 }
@@ -144,14 +159,23 @@ export async function refreshTradePilotSettingsIfStale(force = false): Promise<v
   await inflight;
 }
 
-/** Kuota aktif; trialDays yang belum pernah disimpan diisi default env. */
+/** Kuota aktif; field yang belum pernah disimpan (data lama) diisi default env. */
 export function currentQuotaSettings(): QuotaSettings {
   const quota = cache.quota ?? defaultQuotaSettings();
   const defaults = defaultQuotaSettings();
-  return {
-    demo: { ...quota.demo, trialDays: quota.demo.trialDays === undefined ? defaults.demo.trialDays : quota.demo.trialDays },
-    real: { ...quota.real, trialDays: quota.real.trialDays === undefined ? defaults.real.trialDays : quota.real.trialDays },
-  };
+  const resolve = (mode: Mode) => ({
+    ...quota[mode],
+    trialDays: quota[mode].trialDays === undefined ? defaults[mode].trialDays : quota[mode].trialDays,
+    minEquityUsd: mode === "demo"
+      ? null
+      : quota[mode].minEquityUsd === undefined ? defaults[mode].minEquityUsd : quota[mode].minEquityUsd,
+  });
+  return { demo: resolve("demo"), real: resolve("real") };
+}
+
+/** Equity minimum (USD) untuk mode real; null = tanpa syarat equity. */
+export function effectiveMinEquityUsd(): number | null {
+  return currentQuotaSettings().real.minEquityUsd ?? null;
 }
 
 export function currentAvailabilitySettings(): AvailabilitySettings {

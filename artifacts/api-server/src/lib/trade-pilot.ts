@@ -59,6 +59,7 @@ import { logger } from "./logger";
 import {
   currentAvailabilitySettings,
   currentQuotaSettings,
+  effectiveMinEquityUsd,
   effectiveTrialDays,
   refreshTradePilotSettingsIfStale,
 } from "./trade-pilot-settings";
@@ -339,6 +340,8 @@ function creditView(
     /** Batas masa berlaku (ISO) bila mode ini dibatasi waktu, mis. demo 14 hari. */
     trialEndsAt: trialEndsAt?.toISOString() ?? null,
     expired,
+    /** Equity minimum akun live (USD) untuk mode real; diatur super_admin. */
+    minEquityUsd: mode === "real" ? effectiveMinEquityUsd() : null,
     source: "api" as const,
   };
 }
@@ -772,11 +775,10 @@ export async function createTradePilotAnalysis(input: {
   requestId: string;
   language: TradePilotLanguage;
   /**
-   * Status equity akun live dari get-sgb (header X-TradePilot-Real-Equity).
-   * Mode real hanya boleh jalan bila "positive"; selain itu (termasuk header
-   * tidak dikirim / gagal dicek) ditolak — fail closed.
+   * Equity akun live (USD) dari get-sgb (header X-TradePilot-Real-Equity).
+   * null = gagal dicek / header tidak dikirim -> mode real ditolak (fail closed).
    */
-  realEquity?: "positive" | "none" | "unknown" | null;
+  realEquityUsd?: number | null;
 }) {
   const requestHash = createHash("sha256").update(JSON.stringify({ mode: input.mode, instrumentId: input.instrumentId, timeframe: input.timeframe })).digest("hex");
   const cutoff = new Date(Date.now() - DAY);
@@ -801,8 +803,13 @@ export async function createTradePilotAnalysis(input: {
   )).limit(1);
   if (existing) return replay(existing);
 
-  if (input.mode === "real" && input.realEquity !== "positive") {
-    throw new TradePilotServiceError("no_equity", 403);
+  if (input.mode === "real") {
+    await refreshTradePilotSettingsIfStale();
+    const minEquity = effectiveMinEquityUsd();
+    const equity = input.realEquityUsd ?? null;
+    if (minEquity !== null && (equity === null || equity < minEquity)) {
+      throw new TradePilotServiceError("no_equity", 403);
+    }
   }
   const creditBefore = await getTradePilotCredit(input.userId, input.mode);
   if (creditBefore.expired) throw new TradePilotServiceError("trial_expired", 403);
