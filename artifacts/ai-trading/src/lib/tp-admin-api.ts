@@ -133,6 +133,8 @@ export type CreditView = {
   remaining: number;
   resetsAt: string | null;
   inPeriod: boolean;
+  /** Kuota khusus nasabah (tetap tiap reset); null = ikut kuota global. */
+  customAllowance?: number | null;
 } | null;
 
 export type UserRow = {
@@ -272,7 +274,10 @@ export async function lookupUserByEmail(email: string): Promise<EmailLookupResul
   return response.json() as Promise<EmailLookupResult>;
 }
 
-export type CreditAdjustment = { action: "reset" } | { action: "set"; remaining: number };
+export type CreditAdjustment =
+  | { action: "reset" }
+  | { action: "set"; remaining: number }
+  | { action: "custom"; allowance: number | null };
 
 /** Khusus super_admin: ubah kredit periode berjalan untuk satu pengguna & mode. */
 export async function adjustUserCredit(userId: string, mode: Mode, adjustment: CreditAdjustment) {

@@ -287,8 +287,10 @@ async function ensureCredit(userId: string, mode: TradePilotMode) {
     userId, mode, allowance: allowance(mode), consumed: 0,
     periodStart: window.start, resetsAt: window.end,
   }).onConflictDoNothing();
+  // Reset periode: kuota khusus nasabah (bila ada) menang atas kuota global.
   if (configuredPeriod(mode) !== "never") await db.update(tradePilotCreditBalances).set({
-    allowance: allowance(mode), consumed: 0, periodStart: window.start,
+    allowance: sql`coalesce(${tradePilotCreditBalances.customAllowance}, ${allowance(mode)})`,
+    consumed: 0, periodStart: window.start,
     resetsAt: window.end, updatedAt: now,
   }).where(and(
     eq(tradePilotCreditBalances.userId, userId),
@@ -338,6 +340,9 @@ function creditView(
     // membaca `expired` dan tidak menampilkan jadwal reset.
     resetsAt: configuredPeriod(mode) === "never" ? null : row.resetsAt.toISOString(),
     /** Batas masa berlaku (ISO) bila mode ini dibatasi waktu, mis. demo 14 hari. */
+    /** Kebijakan aktif (diatur super_admin) agar teks klien mengikuti konsol. */
+    period: configuredPeriod(mode),
+    trialDays: effectiveTrialDays(mode),
     trialEndsAt: trialEndsAt?.toISOString() ?? null,
     expired,
     /** Equity minimum akun live (USD) untuk mode real; diatur super_admin. */
@@ -350,20 +355,27 @@ export async function getTradePilotCredit(userId: string, mode: TradePilotMode) 
   return creditView(mode, await ensureCredit(userId, mode));
 }
 
-export type TradePilotCreditAdjustment = { type: "reset" } | { type: "set"; remaining: number };
+export type TradePilotCreditAdjustment =
+  | { type: "reset" }
+  | { type: "set"; remaining: number }
+  /** Kuota khusus permanen (tiap reset); null = kembali ke kuota global. */
+  | { type: "custom"; allowance: number | null };
 
 /**
  * Penyesuaian kredit oleh super_admin untuk PERIODE BERJALAN saja.
  * - reset: kuota kembali penuh sesuai kebijakan (allowance standar, consumed 0)
  *          dan masa berlaku (trial) dimulai ulang dari hari ini.
  * - set:   sisa kredit = `remaining` (allowance = consumed + remaining).
- * Saat periode berganti, ensureCredit() mengembalikan kuota ke kebijakan standar.
+ * - custom: kuota khusus permanen; dipakai di setiap reset sampai dihapus (null).
+ *          Periode berjalan langsung ikut nilai baru, pemakaian tidak dihapus.
+ * Saat periode berganti, ensureCredit() memakai kuota khusus bila ada, selain
+ * itu kebijakan standar.
  * Memakai advisory lock yang sama dengan POST /analyses agar tidak balapan
  * dengan pemotongan kredit.
  */
 type CreditAdjustmentResult = {
-  before: ReturnType<typeof creditView>;
-  after: ReturnType<typeof creditView>;
+  before: ReturnType<typeof creditView> & { customAllowance: number | null };
+  after: ReturnType<typeof creditView> & { customAllowance: number | null };
 };
 
 export async function adjustTradePilotCredit(
@@ -385,15 +397,17 @@ export async function adjustTradePilotCredit(
     if (!row) throw new TradePilotServiceError("not_found", 404);
     // reset juga memulai ulang masa berlaku (mis. memperpanjang demo 14 hari).
     const next = adjustment.type === "reset"
-      ? { allowance: allowance(mode), consumed: 0, trialStartedAt: new Date() }
-      : { allowance: row.consumed + adjustment.remaining, consumed: row.consumed };
+      ? { allowance: row.customAllowance ?? allowance(mode), consumed: 0, trialStartedAt: new Date() }
+      : adjustment.type === "custom"
+        ? { customAllowance: adjustment.allowance, allowance: adjustment.allowance ?? allowance(mode) }
+        : { allowance: row.consumed + adjustment.remaining, consumed: row.consumed };
     const [updated] = await tx.update(tradePilotCreditBalances)
       .set({ ...next, updatedAt: new Date() })
       .where(and(eq(tradePilotCreditBalances.userId, userId), eq(tradePilotCreditBalances.mode, mode)))
       .returning();
     const result = {
-      before: creditView(mode, row),
-      after: creditView(mode, updated!),
+      before: { ...creditView(mode, row), customAllowance: row.customAllowance ?? null },
+      after: { ...creditView(mode, updated!), customAllowance: updated!.customAllowance ?? null },
     };
     if (onAdjusted) await onAdjusted(tx, result);
     return result;

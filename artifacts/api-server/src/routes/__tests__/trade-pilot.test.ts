@@ -212,7 +212,7 @@ dbDescribe("Trade Pilot v1 with database", () => {
     const first = await api("get", "/bootstrap?modes=demo,real", user);
     expect(first.status).toBe(200);
     expect(first.body.isNewUser).toBe(true);
-    expect(first.body.credits.demo).toMatchObject({ mode: "demo", allowance: 3, consumed: 0, remaining: 3, expired: false, source: "api" });
+    expect(first.body.credits.demo).toMatchObject({ mode: "demo", allowance: 3, consumed: 0, remaining: 3, expired: false, period: "daily", trialDays: 14, source: "api" });
     expect(first.body.credits.demo.trialEndsAt).toMatch(/T17:00:00.000Z$/);
     expect(first.body.credits.real).toMatchObject({ mode: "real", allowance: 3, remaining: 3, trialEndsAt: null, expired: false, minEquityUsd: 10 });
     expect(first.body.histories).toEqual({ demo: [], real: [] });

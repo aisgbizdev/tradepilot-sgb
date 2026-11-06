@@ -26,6 +26,7 @@ const ACTIONS = [
   "email_lookup",
   "credit_reset",
   "credit_set",
+  "credit_custom",
   "settings_quota",
   "settings_availability",
   "staff_create",

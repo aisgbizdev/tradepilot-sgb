@@ -577,6 +577,8 @@ function creditView(row: Row | undefined, mode: (typeof TP_MODES)[number]) {
     remaining: Math.max(allowance - consumed, 0),
     resetsAt: iso(row.resets_at)?.startsWith("9999-") ? null : iso(row.resets_at),
     inPeriod,
+    /** Kuota khusus nasabah; null = ikut kuota global. */
+    customAllowance: row.custom_allowance === null || row.custom_allowance === undefined ? null : num(row.custom_allowance),
   };
 }
 
@@ -744,10 +746,12 @@ router.get("/admin/trade-pilot/users/:userId", requireAdmin, handler(async (req,
   });
 }));
 
-// Penyesuaian kredit (khusus super_admin) untuk periode berjalan.
+// Penyesuaian kredit (khusus super_admin): reset/set untuk periode berjalan,
+// custom = kuota khusus permanen per nasabah (null = kembali ke global).
 const creditAdjustmentBody = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reset") }),
   z.object({ action: z.literal("set"), remaining: z.number().int().min(0).max(1000) }),
+  z.object({ action: z.literal("custom"), allowance: z.number().int().min(0).max(10_000).nullable() }),
 ]);
 
 router.post("/admin/trade-pilot/users/:userId/credits/:mode", requireSuperAdmin, handler(async (req, res) => {
@@ -766,18 +770,22 @@ router.post("/admin/trade-pilot/users/:userId/credits/:mode", requireSuperAdmin,
   const result = await adjustTradePilotCredit(
     userId,
     mode.data,
-    body.data.action === "reset" ? { type: "reset" } : { type: "set", remaining: body.data.remaining },
+    body.data.action === "reset"
+      ? { type: "reset" }
+      : body.data.action === "custom"
+        ? { type: "custom", allowance: body.data.allowance }
+        : { type: "set", remaining: body.data.remaining },
     async (tx, change) => {
       await tx.insert(tradePilotAdminAudit).values({
         adminUserId: Number(req.userId),
-        action: body.data.action === "reset" ? "credit_reset" : "credit_set",
+        action: body.data.action === "reset" ? "credit_reset" : body.data.action === "custom" ? "credit_custom" : "credit_set",
         targetUserId: userId,
         found: true,
         requestId: typeof req.id === "string" || typeof req.id === "number" ? String(req.id) : null,
         details: {
           mode: mode.data,
-          before: { allowance: change.before.allowance, consumed: change.before.consumed },
-          after: { allowance: change.after.allowance, consumed: change.after.consumed },
+          before: { allowance: change.before.allowance, consumed: change.before.consumed, customAllowance: change.before.customAllowance },
+          after: { allowance: change.after.allowance, consumed: change.after.consumed, customAllowance: change.after.customAllowance },
           ...(body.data.action === "set" ? { remaining: body.data.remaining } : {}),
         },
       });
@@ -792,6 +800,7 @@ router.post("/admin/trade-pilot/users/:userId/credits/:mode", requireSuperAdmin,
       remaining: result.after.remaining,
       resetsAt: result.after.resetsAt,
       inPeriod: true,
+      customAllowance: result.after.customAllowance,
     },
   });
 }));
@@ -1017,6 +1026,7 @@ router.put("/admin/trade-pilot/settings/quota", requireSuperAdmin, handler(async
       const updated = await rows(sql`
         update tp_credit_balance set allowance = ${next[mode].allowance}, updated_at = now()
         where mode = ${mode} and resets_at > now() and allowance = ${before[mode].allowance}
+          and custom_allowance is null
         returning user_id
       `);
       applied[mode] = updated.length;
