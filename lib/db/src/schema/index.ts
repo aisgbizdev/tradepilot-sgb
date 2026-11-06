@@ -1323,6 +1323,8 @@ export const tradePilotCreditBalances = pgTable("tp_credit_balance", {
   consumed: integer("consumed").notNull().default(0),
   periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
   resetsAt: timestamp("resets_at", { withTimezone: true }).notNull(),
+  /** Pertama kali nasabah memakai mode ini; jangkar masa berlaku (trial) demo. */
+  trialStartedAt: timestamp("trial_started_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.userId, t.mode] }),

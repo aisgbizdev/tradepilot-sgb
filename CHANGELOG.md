@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Added
+- Kebijakan kuota TradePilot baru: **demo 3 analisis/hari berlaku 14 hari** sejak pertama memakai mode demo (`TRADE_PILOT_DEMO_TRIAL_DAYS`, default 14), dan **real 3 analisis/hari selama akun live punya equity**. Saldo kredit menampilkan `trialEndsAt` dan `expired`; `POST /analyses` menolak demo kedaluwarsa dengan `403 trial_expired` dan mode real tanpa header `X-TradePilot-Real-Equity: positive` dengan `403 no_equity` (fail closed, kredit tidak dipotong). Migrasi `0007_tp_trial_window.sql` menambah kolom `tp_credit_balance.trial_started_at` (saldo lama dijangkarkan saat migrasi). Halaman Pengaturan kuota punya input **Masa berlaku (hari)**; reset kredit oleh admin juga memulai ulang masa berlaku.
 - Opsi periode kredit `never` (Tidak direset / Never resets) untuk demo dan real pada pengaturan kuota admin dan konfigurasi environment. Saldo terpakai dipertahankan saat menonaktifkan reset; saldo habis tetap 0 sampai admin menyesuaikannya. API menampilkan `resetsAt: null` untuk saldo tanpa reset; penyimpanan memakai timestamp sentinel agar tidak memerlukan migrasi database.
 
 ### Changed

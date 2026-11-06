@@ -22,6 +22,11 @@ type Mode = (typeof SETTING_MODES)[number];
 const quotaModeSchema = z.object({
   allowance: z.number().int().min(0).max(10_000),
   period: z.enum(SETTING_PERIODS),
+  /**
+   * Masa berlaku (hari) sejak nasabah pertama kali memakai mode ini.
+   * null = tanpa batas. Tidak diisi (data lama) = pakai default env.
+   */
+  trialDays: z.number().int().min(1).max(3650).nullable().optional(),
 });
 
 export const quotaSettingsSchema = z.object({
@@ -59,14 +64,43 @@ function positiveEnv(name: string, fallback: number): number {
 
 function envPeriod(mode: Mode): CreditPeriod {
   const value = process.env[mode === "demo" ? "TRADE_PILOT_DEMO_CREDIT_PERIOD" : "TRADE_PILOT_REAL_CREDIT_PERIOD"];
-  return value === "daily" || value === "weekly" || value === "monthly" || value === "never" ? value : mode === "demo" ? "daily" : "monthly";
+  return value === "daily" || value === "weekly" || value === "monthly" || value === "never" ? value : "daily";
 }
 
+/** Hari masa berlaku dari env; "0"/"off"/"none" = tanpa batas. */
+function envTrialDays(name: string, fallback: number | null): number | null {
+  const raw = (process.env[name] ?? "").trim().toLowerCase();
+  if (raw === "") return fallback;
+  if (raw === "0" || raw === "off" || raw === "none") return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Kebijakan standar:
+ * - demo: 3 analisis/hari, berlaku 14 hari sejak pertama pakai demo.
+ * - real: 3 analisis/hari tanpa batas waktu, selama akun live punya equity
+ *         (dicek di POST /analyses lewat header X-TradePilot-Real-Equity).
+ */
 export function defaultQuotaSettings(): QuotaSettings {
   return {
-    demo: { allowance: positiveEnv("TRADE_PILOT_DEMO_ALLOWANCE", 5), period: envPeriod("demo") },
-    real: { allowance: positiveEnv("TRADE_PILOT_REAL_ALLOWANCE", 50), period: envPeriod("real") },
+    demo: {
+      allowance: positiveEnv("TRADE_PILOT_DEMO_ALLOWANCE", 3),
+      period: envPeriod("demo"),
+      trialDays: envTrialDays("TRADE_PILOT_DEMO_TRIAL_DAYS", 14),
+    },
+    real: {
+      allowance: positiveEnv("TRADE_PILOT_REAL_ALLOWANCE", 3),
+      period: envPeriod("real"),
+      trialDays: envTrialDays("TRADE_PILOT_REAL_TRIAL_DAYS", null),
+    },
   };
+}
+
+/** Masa berlaku efektif per mode (data lama tanpa trialDays -> default env). */
+export function effectiveTrialDays(mode: Mode, settings: QuotaSettings = currentQuotaSettings()): number | null {
+  const value = settings[mode].trialDays;
+  return value === undefined ? defaultQuotaSettings()[mode].trialDays ?? null : value;
 }
 
 export function defaultAvailabilitySettings(): AvailabilitySettings {
@@ -110,8 +144,14 @@ export async function refreshTradePilotSettingsIfStale(force = false): Promise<v
   await inflight;
 }
 
+/** Kuota aktif; trialDays yang belum pernah disimpan diisi default env. */
 export function currentQuotaSettings(): QuotaSettings {
-  return cache.quota ?? defaultQuotaSettings();
+  const quota = cache.quota ?? defaultQuotaSettings();
+  const defaults = defaultQuotaSettings();
+  return {
+    demo: { ...quota.demo, trialDays: quota.demo.trialDays === undefined ? defaults.demo.trialDays : quota.demo.trialDays },
+    real: { ...quota.real, trialDays: quota.real.trialDays === undefined ? defaults.real.trialDays : quota.real.trialDays },
+  };
 }
 
 export function currentAvailabilitySettings(): AvailabilitySettings {

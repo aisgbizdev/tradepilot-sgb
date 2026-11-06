@@ -114,7 +114,8 @@ function newUser(): string {
 function api(method: "get" | "post" | "put", path: string, userId: string) {
   return request(app)[method](`/v1/trade-pilot${path}`)
     .set("Authorization", `Bearer ${API_KEY}`)
-    .set("X-TradePilot-User", userId);
+    .set("X-TradePilot-User", userId)
+    .set("X-TradePilot-Real-Equity", "positive");
 }
 
 beforeAll(() => {
@@ -211,8 +212,9 @@ dbDescribe("Trade Pilot v1 with database", () => {
     const first = await api("get", "/bootstrap?modes=demo,real", user);
     expect(first.status).toBe(200);
     expect(first.body.isNewUser).toBe(true);
-    expect(first.body.credits.demo).toMatchObject({ mode: "demo", allowance: 5, consumed: 0, remaining: 5, source: "api" });
-    expect(first.body.credits.real).toMatchObject({ mode: "real", allowance: 50, remaining: 50 });
+    expect(first.body.credits.demo).toMatchObject({ mode: "demo", allowance: 3, consumed: 0, remaining: 3, expired: false, source: "api" });
+    expect(first.body.credits.demo.trialEndsAt).toMatch(/T17:00:00.000Z$/);
+    expect(first.body.credits.real).toMatchObject({ mode: "real", allowance: 3, remaining: 3, trialEndsAt: null, expired: false });
     expect(first.body.histories).toEqual({ demo: [], real: [] });
     expect(first.body.latestAnalyses).toEqual({ demo: null, real: null });
     expect(first.body.timeframePerformance).toHaveLength(16);
@@ -247,7 +249,7 @@ dbDescribe("Trade Pilot v1 with database", () => {
     expect(analysis.marketContext.title).toBe("Konteks Pasar XAU/USD (1h)");
     expect(analysis.marketContext.description).toContain("Emas bergerak naik");
     expect(analysis.disclaimer).toMatch(/bukan ajakan/);
-    expect(credit).toMatchObject({ mode: "real", allowance: 50, consumed: 1, remaining: 49 });
+    expect(credit).toMatchObject({ mode: "real", allowance: 3, consumed: 1, remaining: 2 });
     expect(history).toMatchObject({ id: analysis.id, status: "still_valid", instrumentLabel: "XAU/USD", timeframeLabel: "1h" });
 
     const replay = await api("post", "/analyses", user).set("Idempotency-Key", "key-0001-abcd").set("Accept-Language", "en").send(body);
@@ -262,7 +264,7 @@ dbDescribe("Trade Pilot v1 with database", () => {
     expect(conflict.body.error.code).toBe("idempotency_conflict");
 
     const credits = await api("get", "/credits?mode=real", user);
-    expect(credits.body).toMatchObject({ consumed: 1, remaining: 49 });
+    expect(credits.body).toMatchObject({ consumed: 1, remaining: 2 });
     // Reset pukul 00:00 WIB (= 17:00 UTC hari sebelumnya), berjangkar pada pertama kali pakai.
     expect(credits.body.resetsAt).toMatch(/T17:00:00.000Z$/);
 
@@ -292,7 +294,7 @@ dbDescribe("Trade Pilot v1 with database", () => {
 
   it("returns 402 when credit runs out", async () => {
     const user = newUser();
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 3; i += 1) {
       _resetTradePilotRateLimit();
       const ok = await api("post", "/analyses", user).set("Idempotency-Key", `quota-${i}-xxxx`).send({ instrumentId: "nikkei", mode: "demo", timeframe: "D" });
       expect(ok.status).toBe(201);
@@ -301,6 +303,22 @@ dbDescribe("Trade Pilot v1 with database", () => {
     const denied = await api("post", "/analyses", user).set("Idempotency-Key", "quota-5-xxxx").send({ instrumentId: "nikkei", mode: "demo", timeframe: "D" });
     expect(denied.status).toBe(402);
     expect(denied.body.error.code).toBe("insufficient_credit");
+  });
+
+  it("rejects real-mode analyses unless the live account has equity", async () => {
+    const body = { instrumentId: "gold", mode: "real", timeframe: "60" };
+    for (const equity of ["none", "unknown", null]) {
+      _resetTradePilotRateLimit();
+      const user = newUser();
+      const call = api("post", "/analyses", user).set("Idempotency-Key", `equity-${equity ?? "missing"}-x`);
+      if (equity) call.set("X-TradePilot-Real-Equity", equity);
+      else call.unset("X-TradePilot-Real-Equity");
+      const denied = await call.send(body);
+      expect(denied.status).toBe(403);
+      expect(denied.body.error.code).toBe("no_equity");
+      const credits = await api("get", "/credits?mode=real", user);
+      expect(credits.body.consumed).toBe(0);
+    }
   });
 
   it("rate limits analyses to 10 per minute per user", async () => {

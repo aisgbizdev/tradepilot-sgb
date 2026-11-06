@@ -167,7 +167,7 @@ function QuotaEditor({
           </div>
         </div>
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
         <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
           {t.tpAdmin.quota_allowance}
           <input
@@ -192,6 +192,24 @@ function QuotaEditor({
           >
             {PERIODS.map((period) => <option key={period} value={period}>{periodLabel(period)}</option>)}
           </select>
+        </label>
+        <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+          {t.tpAdmin.quota_trial_days}
+          <input
+            type="number"
+            min={1}
+            max={3650}
+            step={1}
+            placeholder={t.tpAdmin.quota_trial_unlimited}
+            value={value.trialDays ?? ""}
+            onChange={(event) => onChange({
+              ...value,
+              trialDays: event.target.value === "" ? null : Number(event.target.value),
+            })}
+            className="tabular h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-ring/20"
+            data-testid={`input-quota-trial-${mode}`}
+          />
+          <span className="text-[11px] font-normal">{t.tpAdmin.quota_trial_hint}</span>
         </label>
       </div>
     </div>

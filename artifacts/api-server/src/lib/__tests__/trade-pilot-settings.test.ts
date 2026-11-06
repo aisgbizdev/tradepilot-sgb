@@ -65,13 +65,15 @@ describe("currentQuotaSettings", () => {
   it("falls back to env defaults when nothing is stored", () => {
     process.env.TRADE_PILOT_DEMO_ALLOWANCE = "7";
     _setTradePilotSettingsCache({ quota: null });
-    expect(currentQuotaSettings().demo).toEqual({ allowance: 7, period: "daily" });
+    expect(currentQuotaSettings().demo).toEqual({ allowance: 7, period: "daily", trialDays: 14 });
+    expect(currentQuotaSettings().real).toEqual({ allowance: 3, period: "daily", trialDays: null });
   });
 
   it("prefers the stored super-admin setting", () => {
     _setTradePilotSettingsCache({
       quota: { demo: { allowance: 10, period: "weekly" }, real: { allowance: 80, period: "monthly" } },
     });
-    expect(currentQuotaSettings().demo).toEqual({ allowance: 10, period: "weekly" });
+    // Data lama tanpa trialDays memakai default env (demo 14 hari).
+    expect(currentQuotaSettings().demo).toEqual({ allowance: 10, period: "weekly", trialDays: 14 });
   });
 });

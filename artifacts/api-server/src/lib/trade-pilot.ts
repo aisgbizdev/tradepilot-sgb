@@ -59,6 +59,7 @@ import { logger } from "./logger";
 import {
   currentAvailabilitySettings,
   currentQuotaSettings,
+  effectiveTrialDays,
   refreshTradePilotSettingsIfStale,
 } from "./trade-pilot-settings";
 import {
@@ -104,6 +105,8 @@ export type IndicatorItem = {
 
 export type TradePilotErrorCodeFromService =
   | "insufficient_credit"
+  | "trial_expired"
+  | "no_equity"
   | "idempotency_conflict"
   | "upstream_unavailable"
   | "not_found"
@@ -307,13 +310,35 @@ async function ensureCredit(userId: string, mode: TradePilotMode) {
   return row!;
 }
 
-function creditView(mode: TradePilotMode, row: { allowance: number; consumed: number; resetsAt: Date }) {
+/**
+ * Akhir masa berlaku mode ini: 00:00 WIB pada hari ke-(trialDays) sejak hari
+ * pertama nasabah memakai mode tsb. null = tanpa batas.
+ */
+export function creditTrialEndsAt(mode: TradePilotMode, trialStartedAt: Date | null | undefined): Date | null {
+  const days = effectiveTrialDays(mode);
+  if (!days || !trialStartedAt) return null;
+  const first = wibDate(trialStartedAt.getTime());
+  return new Date(wibMidnightOf(first.year, first.month, first.day) + days * DAY);
+}
+
+function creditView(
+  mode: TradePilotMode,
+  row: { allowance: number; consumed: number; resetsAt: Date; trialStartedAt?: Date | null },
+  now = new Date(),
+) {
+  const trialEndsAt = creditTrialEndsAt(mode, row.trialStartedAt);
+  const expired = trialEndsAt !== null && trialEndsAt.getTime() <= now.getTime();
   return {
     mode,
     allowance: row.allowance,
     consumed: row.consumed,
-    remaining: Math.max(0, row.allowance - row.consumed),
+    remaining: expired ? 0 : Math.max(0, row.allowance - row.consumed),
+    // Tetap string saat expired (klien lama mewajibkan string); klien baru
+    // membaca `expired` dan tidak menampilkan jadwal reset.
     resetsAt: configuredPeriod(mode) === "never" ? null : row.resetsAt.toISOString(),
+    /** Batas masa berlaku (ISO) bila mode ini dibatasi waktu, mis. demo 14 hari. */
+    trialEndsAt: trialEndsAt?.toISOString() ?? null,
+    expired,
     source: "api" as const,
   };
 }
@@ -326,7 +351,8 @@ export type TradePilotCreditAdjustment = { type: "reset" } | { type: "set"; rema
 
 /**
  * Penyesuaian kredit oleh super_admin untuk PERIODE BERJALAN saja.
- * - reset: kuota kembali penuh sesuai kebijakan (allowance standar, consumed 0).
+ * - reset: kuota kembali penuh sesuai kebijakan (allowance standar, consumed 0)
+ *          dan masa berlaku (trial) dimulai ulang dari hari ini.
  * - set:   sisa kredit = `remaining` (allowance = consumed + remaining).
  * Saat periode berganti, ensureCredit() mengembalikan kuota ke kebijakan standar.
  * Memakai advisory lock yang sama dengan POST /analyses agar tidak balapan
@@ -354,8 +380,9 @@ export async function adjustTradePilotCredit(
       eq(tradePilotCreditBalances.userId, userId), eq(tradePilotCreditBalances.mode, mode),
     )).limit(1);
     if (!row) throw new TradePilotServiceError("not_found", 404);
+    // reset juga memulai ulang masa berlaku (mis. memperpanjang demo 14 hari).
     const next = adjustment.type === "reset"
-      ? { allowance: allowance(mode), consumed: 0 }
+      ? { allowance: allowance(mode), consumed: 0, trialStartedAt: new Date() }
       : { allowance: row.consumed + adjustment.remaining, consumed: row.consumed };
     const [updated] = await tx.update(tradePilotCreditBalances)
       .set({ ...next, updatedAt: new Date() })
@@ -744,6 +771,12 @@ export async function createTradePilotAnalysis(input: {
   idempotencyKey: string;
   requestId: string;
   language: TradePilotLanguage;
+  /**
+   * Status equity akun live dari get-sgb (header X-TradePilot-Real-Equity).
+   * Mode real hanya boleh jalan bila "positive"; selain itu (termasuk header
+   * tidak dikirim / gagal dicek) ditolak — fail closed.
+   */
+  realEquity?: "positive" | "none" | "unknown" | null;
 }) {
   const requestHash = createHash("sha256").update(JSON.stringify({ mode: input.mode, instrumentId: input.instrumentId, timeframe: input.timeframe })).digest("hex");
   const cutoff = new Date(Date.now() - DAY);
@@ -768,7 +801,11 @@ export async function createTradePilotAnalysis(input: {
   )).limit(1);
   if (existing) return replay(existing);
 
+  if (input.mode === "real" && input.realEquity !== "positive") {
+    throw new TradePilotServiceError("no_equity", 403);
+  }
   const creditBefore = await getTradePilotCredit(input.userId, input.mode);
+  if (creditBefore.expired) throw new TradePilotServiceError("trial_expired", 403);
   if (creditBefore.remaining <= 0) throw new TradePilotServiceError("insufficient_credit", 402);
 
   const { generated, cacheHit } = await getOrGenerate(input.instrumentId, input.timeframe, input.mode);
@@ -813,7 +850,9 @@ export async function createTradePilotAnalysis(input: {
     const [credit] = await tx.select().from(tradePilotCreditBalances).where(and(
       eq(tradePilotCreditBalances.userId, input.userId), eq(tradePilotCreditBalances.mode, input.mode),
     )).limit(1);
-    if (!credit || credit.consumed >= credit.allowance) throw new TradePilotServiceError("insufficient_credit", 402);
+    if (!credit) throw new TradePilotServiceError("insufficient_credit", 402);
+    if (creditView(input.mode, credit, now).expired) throw new TradePilotServiceError("trial_expired", 403);
+    if (credit.consumed >= credit.allowance) throw new TradePilotServiceError("insufficient_credit", 402);
     const [row] = await tx.insert(tradePilotAnalyses).values({
       id, userId: input.userId, mode: input.mode,
       instrumentId: input.instrumentId, instrumentLabel: instrument.label,

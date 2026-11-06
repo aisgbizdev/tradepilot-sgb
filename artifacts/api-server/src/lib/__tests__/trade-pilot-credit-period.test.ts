@@ -7,7 +7,7 @@ const { creditDb, updates } = vi.hoisted(() => {
 });
 vi.mock("../db", () => ({ db: creditDb, pool: {} }));
 
-import { creditPeriodWindow, getTradePilotCredit } from "../trade-pilot";
+import { creditPeriodWindow, creditTrialEndsAt, getTradePilotCredit } from "../trade-pilot";
 import { _setTradePilotSettingsCache } from "../trade-pilot-settings";
 
 afterEach(() => {
@@ -92,5 +92,41 @@ describe("creditPeriodWindow (berjangkar pada pertama kali pakai)", () => {
       start: wib("2026-10-29T00:00:00"),
       end: wib("2026-10-30T00:00:00"),
     });
+  });
+});
+
+describe("demo trial window", () => {
+  const mockRow = (row: Record<string, unknown>) => {
+    creditDb.insert.mockImplementation(() => ({ values: () => ({ onConflictDoNothing: async () => {} }) }));
+    creditDb.select.mockImplementation(() => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }));
+    creditDb.update.mockImplementation(() => ({ set: () => ({ where: async () => {} }) }));
+  };
+
+  it("ends 14 days after 00:00 WIB of the first demo use; real has no limit", () => {
+    // 2026-11-06 10:00 WIB -> hari pertama 2026-11-06 -> berakhir 2026-11-20 00:00 WIB.
+    const start = new Date("2026-11-06T03:00:00Z");
+    expect(creditTrialEndsAt("demo", start)?.toISOString()).toBe("2026-11-19T17:00:00.000Z");
+    expect(creditTrialEndsAt("real", start)).toBeNull();
+  });
+
+  it("reports an expired demo balance with zero remaining and no reset", async () => {
+    mockRow({
+      allowance: 3, consumed: 0,
+      resetsAt: new Date(Date.now() + 3_600_000),
+      trialStartedAt: new Date(Date.now() - 20 * 86_400_000),
+    });
+    const result = await getTradePilotCredit("test-user", "demo");
+    expect(result).toMatchObject({ allowance: 3, remaining: 0, expired: true });
+  });
+
+  it("keeps an active demo balance usable inside the 14-day window", async () => {
+    mockRow({
+      allowance: 3, consumed: 1,
+      resetsAt: new Date(Date.now() + 3_600_000),
+      trialStartedAt: new Date(Date.now() - 2 * 86_400_000),
+    });
+    const result = await getTradePilotCredit("test-user", "demo");
+    expect(result).toMatchObject({ remaining: 2, expired: false });
+    expect(result.trialEndsAt).not.toBeNull();
   });
 });

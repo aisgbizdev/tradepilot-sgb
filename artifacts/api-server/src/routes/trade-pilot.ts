@@ -50,6 +50,7 @@ interface TradePilotRequest extends Request {
   tradePilotRequestId?: string;
   tradePilotLanguage?: TradePilotLanguage;
   tradePilotAllowedModes?: ReadonlySet<string> | null;
+  tradePilotRealEquity?: "positive" | "none" | "unknown" | null;
 }
 
 const router = Router();
@@ -113,6 +114,9 @@ function requireTradePilotService(req: TradePilotRequest, res: Response, next: N
   req.tradePilotAllowedModes = allowed
     ? new Set(allowed.split(",").map((value) => value.trim()).filter(Boolean))
     : null;
+  // Status equity akun live dari get-sgb; hanya dipakai untuk mode real.
+  const equity = (req.header("X-TradePilot-Real-Equity") ?? "").trim().toLowerCase();
+  req.tradePilotRealEquity = equity === "positive" || equity === "none" || equity === "unknown" ? equity : null;
   next();
 }
 
@@ -192,6 +196,7 @@ router.post("/analyses", handler(async (req, res) => {
       idempotencyKey,
       requestId: req.tradePilotRequestId!,
       language: lang(req),
+      realEquity: req.tradePilotRealEquity ?? null,
       ...body.data,
     });
     res.status(201).json(result);
