@@ -1,14 +1,22 @@
-import { calculateIndicators, type TechnicalIndicators, type Candle } from "./indicators.js";
-import { isCryptoInstrument, yahooCryptoSymbolFor } from "./crypto-instruments.js";
+import {
+  calculateIndicators,
+  type TechnicalIndicators,
+  type Candle,
+} from "./indicators.js";
+import {
+  isCryptoInstrument,
+  yahooCryptoSymbolFor,
+} from "./crypto-instruments.js";
 import { getLivePriceFor } from "./live-prices.js";
 import { VERIFIED_OTHER_INSTRUMENTS } from "./verified-instruments.js";
 
-const HISTORICAL_API = "https://endpoapi-production-3202.up.railway.app/api/historical";
+const HISTORICAL_API =
+  "https://endpoapi-production-3202.up.railway.app/api/historical";
 // Yahoo Finance's chart endpoint. Public, unauthenticated, widely used as a
 // free intraday OHLC source for forex, futures, and indices. We send a
 // browser-like User-Agent because the host occasionally rejects the default
 // Node.js fetch UA.
-const YAHOO_CHART_API = "https://query1.finance.yahoo.com/v8/finance/chart";
+const YAHOO_CHART_API = "https://query2.finance.yahoo.com/v8/finance/chart";
 const YAHOO_USER_AGENT =
   "Mozilla/5.0 (compatible; AITradingAssistant/1.0; +https://aitradingassistant.app)";
 
@@ -18,14 +26,14 @@ const YAHOO_USER_AGENT =
 // coverage via Yahoo Finance — selecting 1D/1W for them returns null.
 const SYMBOL_MAP: Record<string, string> = {
   "XAU/USD": "LGD Daily",
-  "BRENT": "BCO Daily",
+  BRENT: "BCO Daily",
   "EUR/USD": "EUR/USD",
   "GBP/USD": "GBP/USD",
   "USD/JPY": "USD/JPY",
   "USD/CHF": "USD/CHF",
   "AUD/USD": "AUD/USD",
-  "HSI": "HSI Daily",
-  "NIKKEI": "SNI Daily",
+  HSI: "HSI Daily",
+  NIKKEI: "SNI Daily",
 };
 
 // Per-instrument Yahoo Finance symbol used for intraday OHLC. Choose the most
@@ -43,32 +51,41 @@ const SYMBOL_MAP: Record<string, string> = {
 const YAHOO_SYMBOL_MAP: Record<string, string> = {
   "XAU/USD": "GC=F",
   "XAG/USD": "SI=F",
-  "BRENT": "BZ=F",
+  BRENT: "BZ=F",
   "EUR/USD": "EURUSD=X",
   "GBP/USD": "GBPUSD=X",
   "USD/JPY": "JPY=X",
   "USD/CHF": "CHF=X",
   "AUD/USD": "AUDUSD=X",
   "USD/IDR": "IDR=X",
-  "HSI": "^HSI",
-  "NIKKEI": "NIY=F",
-  "DJIA": "YM=F",
-  "NASDAQ": "NQ=F",
-  "DXY": "DX-Y.NYB",
+  HSI: "^HSI",
+  NIKKEI: "NIY=F",
+  DJIA: "YM=F",
+  NASDAQ: "NQ=F",
+  DXY: "DX-Y.NYB",
 };
 
 export type IntradayTimeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h";
 export type DailyTimeframe = "1D" | "1W";
 export type IndicatorTimeframe = IntradayTimeframe | DailyTimeframe;
 
-export const INTRADAY_TIMEFRAMES: IntradayTimeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h"];
+export const INTRADAY_TIMEFRAMES: IntradayTimeframe[] = [
+  "1m",
+  "5m",
+  "15m",
+  "30m",
+  "1h",
+  "4h",
+];
 export const SUPPORTED_INDICATOR_TIMEFRAMES: IndicatorTimeframe[] = [
   ...INTRADAY_TIMEFRAMES,
   "1D",
   "1W",
 ];
 
-export function isSupportedIndicatorTimeframe(tf: string): tf is IndicatorTimeframe {
+export function isSupportedIndicatorTimeframe(
+  tf: string,
+): tf is IndicatorTimeframe {
   return (SUPPORTED_INDICATOR_TIMEFRAMES as string[]).includes(tf);
 }
 
@@ -79,11 +96,16 @@ function isIntradayTimeframe(tf: IndicatorTimeframe): tf is IntradayTimeframe {
 let dailyCache: { data: any; fetchedAt: number } | null = null;
 const DAILY_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-async function fetchAllHistorical(): Promise<{ data: any[]; fetchedAt: number }> {
+async function fetchAllHistorical(): Promise<{
+  data: any[];
+  fetchedAt: number;
+}> {
   if (dailyCache && Date.now() - dailyCache.fetchedAt < DAILY_CACHE_TTL) {
     return { data: dailyCache.data, fetchedAt: dailyCache.fetchedAt };
   }
-  const dateFrom = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const dateFrom = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
   const res = await fetch(`${HISTORICAL_API}?dateFrom=${dateFrom}`);
   if (!res.ok) throw new Error("Failed to fetch historical data");
   const json = (await res.json()) as { data: any };
@@ -126,11 +148,16 @@ const INDICATORS_CACHE_TTL_MS: Record<IndicatorTimeframe, number> = {
 // surface the failure as null so the UI can show a fresh-data error state.
 const STALE_FALLBACK_MULTIPLIER = 6;
 
-export function indicatorsCacheTtlSeconds(timeframe: IndicatorTimeframe): number {
+export function indicatorsCacheTtlSeconds(
+  timeframe: IndicatorTimeframe,
+): number {
   return Math.floor(INDICATORS_CACHE_TTL_MS[timeframe] / 1000);
 }
 
-function indicatorsCacheKey(instrument: string, timeframe: IndicatorTimeframe): string {
+function indicatorsCacheKey(
+  instrument: string,
+  timeframe: IndicatorTimeframe,
+): string {
   return `${instrument}|${timeframe}`;
 }
 
@@ -157,9 +184,13 @@ function resampleDailyToWeekly(daily: Candle[]): Candle[] {
     // Find Monday of this date's ISO week (UTC to avoid TZ drift).
     const day = d.getUTCDay(); // 0=Sun..6=Sat
     const diffToMonday = day === 0 ? -6 : 1 - day;
-    const monday = new Date(Date.UTC(
-      d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diffToMonday,
-    ));
+    const monday = new Date(
+      Date.UTC(
+        d.getUTCFullYear(),
+        d.getUTCMonth(),
+        d.getUTCDate() + diffToMonday,
+      ),
+    );
     return monday.toISOString().slice(0, 10);
   };
 
@@ -221,12 +252,15 @@ function resampleHourlyToFourHour(hourly: Candle[]): Candle[] {
 // Map our intraday timeframes to (Yahoo interval, range) pairs. Ranges are
 // chosen to comfortably exceed a 200-period SMA on each timeframe so every
 // indicator the panel computes returns a value.
-const YAHOO_INTRADAY_PARAMS: Record<IntradayTimeframe, { interval: string; range: string }> = {
-  "1m": { interval: "1m", range: "7d" },     // ~10k candles (max Yahoo allows for 1m)
-  "5m": { interval: "5m", range: "60d" },    // ~5k candles
-  "15m": { interval: "15m", range: "60d" },  // ~1.7k candles
-  "30m": { interval: "30m", range: "60d" },  // ~880 candles — Yahoo supports 30m natively
-  "1h": { interval: "60m", range: "730d" },  // ~3k candles
+const YAHOO_INTRADAY_PARAMS: Record<
+  IntradayTimeframe,
+  { interval: string; range: string }
+> = {
+  "1m": { interval: "1m", range: "7d" }, // ~10k candles (max Yahoo allows for 1m)
+  "5m": { interval: "5m", range: "60d" }, // ~5k candles
+  "15m": { interval: "15m", range: "60d" }, // ~1.7k candles
+  "30m": { interval: "30m", range: "60d" }, // ~880 candles — Yahoo supports 30m natively
+  "1h": { interval: "60m", range: "730d" }, // ~3k candles
   // 4h is not a native Yahoo interval — we fetch 1h with a long range and
   // resample below to 4h buckets.
   "4h": { interval: "60m", range: "730d" },
@@ -270,9 +304,16 @@ async function fetchYahooCandlesOnce(
       signal: controller.signal,
     });
   } catch (err: any) {
-    // Network errors and timeouts are always retryable.
+    // Network errors and timeouts are always retryable. Node's fetch (undici)
+    // only reports "fetch failed" as the message; the real reason (ETIMEDOUT,
+    // ENETUNREACH, ECONNRESET, ...) lives in err.cause, so surface it for
+    // diagnosing IPv6 / happy-eyeballs vs. blocking problems.
+    const cause = err?.cause;
+    const causeCode = cause?.code ?? cause?.errors?.[0]?.code;
+    const causeMsg = cause?.message ? String(cause.message).slice(0, 120) : "";
+    const causeInfo = causeCode || causeMsg ? ` (cause: ${[causeCode, causeMsg].filter(Boolean).join(" ")})` : "";
     throw new TransientYahooError(
-      `Yahoo Finance fetch failed for ${yahooSymbol}: ${err?.name ?? "Error"} ${err?.message ?? ""}`.trim(),
+      `Yahoo Finance fetch failed for ${yahooSymbol}: ${err?.name ?? "Error"} ${err?.message ?? ""}${causeInfo}`.trim(),
     );
   } finally {
     clearTimeout(timer);
@@ -286,7 +327,10 @@ async function fetchYahooCandlesOnce(
     throw new Error(`Yahoo Finance returned ${res.status} for ${yahooSymbol}`);
   }
   const json = (await res.json()) as {
-    chart?: { result?: YahooChartResult[]; error?: { code?: string; description?: string } | null };
+    chart?: {
+      result?: YahooChartResult[];
+      error?: { code?: string; description?: string } | null;
+    };
   };
   if (json.chart?.error) {
     throw new Error(
@@ -344,7 +388,9 @@ async function fetchYahooCandlesUnshared(
         // lockstep. Backoff is short on purpose — Yahoo errors are usually
         // either instantly recoverable or persistent for many seconds.
         const jitter = Math.floor(Math.random() * 100);
-        await new Promise((r) => setTimeout(r, YAHOO_RETRY_CONFIG.backoffMs + jitter));
+        await new Promise((r) =>
+          setTimeout(r, YAHOO_RETRY_CONFIG.backoffMs + jitter),
+        );
       }
     }
   }
@@ -354,15 +400,23 @@ async function fetchYahooCandlesUnshared(
 }
 
 const yahooRequests = new Map<string, Promise<Candle[]>>();
-function fetchYahooCandles(yahooSymbol: string, interval: string, range: string): Promise<Candle[]> {
+function fetchYahooCandles(
+  yahooSymbol: string,
+  interval: string,
+  range: string,
+): Promise<Candle[]> {
   const key = `${yahooSymbol}|${interval}|${range}`;
   const existing = yahooRequests.get(key);
   if (existing) return existing;
   const request = fetchYahooCandlesUnshared(yahooSymbol, interval, range);
   yahooRequests.set(key, request);
   void request.then(
-    () => { if (yahooRequests.get(key) === request) yahooRequests.delete(key); },
-    () => { if (yahooRequests.get(key) === request) yahooRequests.delete(key); },
+    () => {
+      if (yahooRequests.get(key) === request) yahooRequests.delete(key);
+    },
+    () => {
+      if (yahooRequests.get(key) === request) yahooRequests.delete(key);
+    },
   );
   return request;
 }
@@ -374,11 +428,16 @@ async function getIntradayCandles(
   // Crypto: Yahoo carries BTC-USD / ETH-USD / etc. on the same chart
   // endpoint we already use for forex futures, so we just resolve the
   // symbol differently and reuse the rest of the pipeline.
-  const yahooSymbol = yahooCryptoSymbolFor(instrument) ?? YAHOO_SYMBOL_MAP[instrument];
+  const yahooSymbol =
+    yahooCryptoSymbolFor(instrument) ?? YAHOO_SYMBOL_MAP[instrument];
   if (!yahooSymbol) return null;
 
   const params = YAHOO_INTRADAY_PARAMS[timeframe];
-  const raw = await fetchYahooCandles(yahooSymbol, params.interval, params.range);
+  const raw = await fetchYahooCandles(
+    yahooSymbol,
+    params.interval,
+    params.range,
+  );
   if (raw.length === 0) return [];
 
   // 4h uses 1h data resampled into UTC-aligned 4-hour buckets.
@@ -390,7 +449,10 @@ async function getIntradayCandles(
 // interval and (for 1W) resample with the same Mon–Sun bucketing rule
 // used everywhere else. Range of 2y comfortably exceeds the 200-period
 // SMA on daily, and ~5y for weekly.
-const YAHOO_DAILY_PARAMS: Record<DailyTimeframe, { interval: string; range: string }> = {
+const YAHOO_DAILY_PARAMS: Record<
+  DailyTimeframe,
+  { interval: string; range: string }
+> = {
   "1D": { interval: "1d", range: "2y" },
   "1W": { interval: "1d", range: "5y" },
 };
@@ -402,7 +464,11 @@ async function getCryptoDailyCandles(
   const yahooSymbol = yahooCryptoSymbolFor(instrument);
   if (!yahooSymbol) return null;
   const params = YAHOO_DAILY_PARAMS[timeframe];
-  const raw = await fetchYahooCandles(yahooSymbol, params.interval, params.range);
+  const raw = await fetchYahooCandles(
+    yahooSymbol,
+    params.interval,
+    params.range,
+  );
   if (raw.length === 0) return [];
   return timeframe === "1W" ? resampleDailyToWeekly(raw) : raw;
 }
@@ -417,7 +483,11 @@ async function getDailyCandles(
   if (VERIFIED_OTHER_INSTRUMENTS.has(instrument)) {
     const yahooSymbol = YAHOO_SYMBOL_MAP[instrument];
     const params = YAHOO_DAILY_PARAMS[timeframe];
-    const raw = await fetchYahooCandles(yahooSymbol, params.interval, params.range);
+    const raw = await fetchYahooCandles(
+      yahooSymbol,
+      params.interval,
+      params.range,
+    );
     if (!raw.length) return null;
     return {
       candles: timeframe === "1W" ? resampleDailyToWeekly(raw) : raw,
@@ -438,7 +508,8 @@ async function getDailyCandles(
   const apiSymbol = SYMBOL_MAP[instrument];
   if (!apiSymbol) return null;
 
-  const { data: allData, fetchedAt: sourceFetchedAt } = await fetchAllHistorical();
+  const { data: allData, fetchedAt: sourceFetchedAt } =
+    await fetchAllHistorical();
   const symbolData = allData.find((s: any) => s.symbol === apiSymbol);
   if (!symbolData || !symbolData.data?.length) return null;
 
@@ -458,7 +529,10 @@ async function getDailyCandles(
       low: d.low,
       close: d.close,
     }))
-    .sort((a: Candle, b: Candle) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort(
+      (a: Candle, b: Candle) =>
+        new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
 
   const candles =
     timeframe === "1W" ? resampleDailyToWeekly(dailyCandles) : dailyCandles;
@@ -549,7 +623,8 @@ export async function getIndicators(
         candles = source.candles;
       } else {
         candles = await getIntradayCandles(instrument, timeframe);
-        if (candles?.length) candlesCache.set(cacheKey, { candles, sourceFetchedAt: Date.now() });
+        if (candles?.length)
+          candlesCache.set(cacheKey, { candles, sourceFetchedAt: Date.now() });
       }
     } catch (err) {
       console.warn(
@@ -621,7 +696,9 @@ const CANDLE_FAILURE_COOLDOWN_MS = 3_000;
 // The daily feed is shared for one hour. Its age limit must reflect that
 // upstream cache, not the shorter indicators computation cache.
 function candleSourceMaxAge(timeframe: IndicatorTimeframe): number {
-  return isIntradayTimeframe(timeframe) ? INDICATORS_CACHE_TTL_MS[timeframe] : DAILY_CACHE_TTL;
+  return isIntradayTimeframe(timeframe)
+    ? INDICATORS_CACHE_TTL_MS[timeframe]
+    : DAILY_CACHE_TTL;
 }
 
 async function candleSnapshot(
@@ -638,7 +715,11 @@ async function candleSnapshot(
     sourceFetchedAt: new Date(cached.sourceFetchedAt).toISOString(),
     sourceMaxAgeMs: maxAge,
     isStale: feedUnavailable || isOld,
-    staleReason: feedUnavailable ? "feed_unavailable" : isOld ? "source_age" : null,
+    staleReason: feedUnavailable
+      ? "feed_unavailable"
+      : isOld
+        ? "source_age"
+        : null,
   };
 }
 
@@ -661,19 +742,29 @@ async function loadCandleSnapshot(
   }
   try {
     const result = isIntradayTimeframe(timeframe)
-      ? { candles: await getIntradayCandles(instrument, timeframe), sourceFetchedAt: Date.now() }
+      ? {
+          candles: await getIntradayCandles(instrument, timeframe),
+          sourceFetchedAt: Date.now(),
+        }
       : await getDailyCandles(instrument, timeframe);
     if (!result) return null;
-    if (!result.candles?.length) throw new EmptyCandleFeedError("Empty candle feed");
+    if (!result.candles?.length)
+      throw new EmptyCandleFeedError("Empty candle feed");
     // Cache raw bars, not live-price adjusted ones. Anchoring changes on each
     // request while the OHLC source timestamp stays fixed until its next fetch.
-    const next = { candles: result.candles, sourceFetchedAt: result.sourceFetchedAt };
+    const next = {
+      candles: result.candles,
+      sourceFetchedAt: result.sourceFetchedAt,
+    };
     candlesCache.set(key, next);
     candleFailureUntil.delete(key);
     return candleSnapshot(next, maxAge, false, instrument);
   } catch (err) {
     candleFailureUntil.set(key, Date.now() + CANDLE_FAILURE_COOLDOWN_MS);
-    if (cached && Date.now() - cached.sourceFetchedAt < maxAge * STALE_FALLBACK_MULTIPLIER) {
+    if (
+      cached &&
+      Date.now() - cached.sourceFetchedAt < maxAge * STALE_FALLBACK_MULTIPLIER
+    ) {
       return candleSnapshot(cached, maxAge, true, instrument);
     }
     throw err;
@@ -690,8 +781,12 @@ export function getCandleSnapshot(
   const request = loadCandleSnapshot(instrument, timeframe);
   candleRequests.set(key, request);
   void request.then(
-    () => { if (candleRequests.get(key) === request) candleRequests.delete(key); },
-    () => { if (candleRequests.get(key) === request) candleRequests.delete(key); },
+    () => {
+      if (candleRequests.get(key) === request) candleRequests.delete(key);
+    },
+    () => {
+      if (candleRequests.get(key) === request) candleRequests.delete(key);
+    },
   );
   return request;
 }
@@ -712,7 +807,10 @@ export async function getCandles(
 }
 
 // Human-readable Indonesian unit/period labels for prompt + UI alignment.
-function timeframeLabels(tf: IndicatorTimeframe): { candleUnit: string; periodLabel: string } {
+function timeframeLabels(tf: IndicatorTimeframe): {
+  candleUnit: string;
+  periodLabel: string;
+} {
   switch (tf) {
     case "1m":
       return { candleUnit: "candle 1 menit", periodLabel: "candle 1m" };

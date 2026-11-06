@@ -2,6 +2,20 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startBackgroundJobs, stopBackgroundJobs } from "./lib/jobs";
 import { pool } from "./lib/db";
+import net from "node:net";
+
+// Node >= 20 enables "happy eyeballs" (autoSelectFamily) by default. On hosts
+// with broken/unreachable IPv6 it makes outbound fetch() calls (e.g. Yahoo
+// Finance) fail with ETIMEDOUT / "fetch failed". Equivalent to running with
+// NODE_OPTIONS=--no-network-family-autoselection, but set here so it ships with
+// the code and does not depend on per-host env. Opt back in with
+// NETWORK_FAMILY_AUTOSELECTION=true.
+if (
+  process.env["NETWORK_FAMILY_AUTOSELECTION"] !== "true" &&
+  typeof net.setDefaultAutoSelectFamily === "function"
+) {
+  net.setDefaultAutoSelectFamily(false);
+}
 
 const rawPort = process.env["PORT"];
 

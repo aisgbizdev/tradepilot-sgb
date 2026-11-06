@@ -817,6 +817,30 @@ export function sanitizeTradePlanLevels(plan: TradePlan): TradePlan {
   };
 }
 
+// Last-resort fallback when there is no reliable price anchor and the model
+// still invented numbers / "n/a" after a corrective retry. Instead of failing
+// the whole analysis (HTTP 502) because an upstream price feed is down, replace
+// every level with an explicit pending description. No numbers are fabricated.
+const NO_ANCHOR_RATIONALE =
+  "Quote harga andal belum tersedia saat analisis ini dibuat; level entry, SL, dan TP masih pending sampai harga live terverifikasi. Ulangi analisis beberapa saat lagi.";
+
+function toPendingNoAnchorTradePlan(plan: TradePlan): TradePlan {
+  const pendingSide = (side: TradeSide): TradeSide => ({
+    ...side,
+    entryZone: PENDING_PRICE_LEVEL,
+    stopLoss: PENDING_PRICE_LEVEL,
+    takeProfit1: PENDING_PRICE_LEVEL,
+    takeProfit2: PENDING_PRICE_LEVEL,
+    riskRewardRatio: "Belum dihitung — menunggu quote dan level entry yang dapat divalidasi",
+    rationale: NO_ANCHOR_RATIONALE,
+  });
+  return {
+    ...plan,
+    buy: pendingSide(plan.buy),
+    sell: pendingSide(plan.sell),
+  };
+}
+
 // Apply post-processing hygiene to a validated AI output before returning it.
 function finalizeOutput(out: AIOutput): AIOutput {
   return {
@@ -1068,11 +1092,22 @@ export async function generateAnalysis(
       instrument,
     );
     if (!retryTradePlanCheck.ok) {
-      throw new Error(
-        `AI trade-plan quality failed after retry: ${retryTradePlanCheck.reason}`,
+      if (priceAnchor !== null) {
+        throw new Error(
+          `AI trade-plan quality failed after retry: ${retryTradePlanCheck.reason}`,
+        );
+      }
+      logger.warn(
+        { instrument, timeframe, reason: retryTradePlanCheck.reason },
+        "No price anchor and trade plan still invalid after retry; using pending fallback plan",
       );
+      parsed = {
+        ...retryParsed,
+        tradePlan: toPendingNoAnchorTradePlan(retryParsed.tradePlan),
+      } as AIOutput;
+    } else {
+      parsed = retryParsed;
     }
-    parsed = retryParsed;
   }
 
   // Citation grounding check. Done after schema validation so we know
@@ -1091,7 +1126,7 @@ export async function generateAnalysis(
       maxTokens,
       analysisTimeoutMs,
     );
-    const retryParsed = parseAttempt(retryRaw);
+    let retryParsed = parseAttempt(retryRaw);
     const retryTradePlanCheck = validateTradePlanQuality(
       retryParsed.tradePlan,
       priceAnchor,
@@ -1099,9 +1134,19 @@ export async function generateAnalysis(
       instrument,
     );
     if (!retryTradePlanCheck.ok) {
-      throw new Error(
-        `AI trade-plan quality failed after grounding retry: ${retryTradePlanCheck.reason}`,
+      if (priceAnchor !== null) {
+        throw new Error(
+          `AI trade-plan quality failed after grounding retry: ${retryTradePlanCheck.reason}`,
+        );
+      }
+      logger.warn(
+        { instrument, timeframe, reason: retryTradePlanCheck.reason },
+        "No price anchor and trade plan still invalid after grounding retry; using pending fallback plan",
       );
+      retryParsed = {
+        ...retryParsed,
+        tradePlan: toPendingNoAnchorTradePlan(retryParsed.tradePlan),
+      } as AIOutput;
     }
     const retryCheck = validateFundamentalCitations(
       retryParsed.fundamentalCitations,

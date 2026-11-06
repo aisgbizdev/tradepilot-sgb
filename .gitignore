@@ -56,3 +56,5 @@ Thumbs.db
 OAuth google.json
 *oauth*.json
 client_secret*.json
+
+/deploy
