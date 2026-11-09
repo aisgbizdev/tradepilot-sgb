@@ -170,7 +170,7 @@ router.get("/admin/trade-pilot/overview", requireAdmin, handler(async (req, res)
       count(*) filter (where resets_at > now()) as users_in_period,
       coalesce(sum(consumed) filter (where resets_at > now()), 0) as consumed,
       coalesce(sum(allowance) filter (where resets_at > now()), 0) as allowance_total,
-      count(*) filter (where resets_at > now() and consumed >= allowance) as exhausted
+      count(*) filter (where resets_at > now() and consumed >= allowance and not unlimited) as exhausted
     from tp_credit_balance
     group by mode
   `);
@@ -579,6 +579,8 @@ function creditView(row: Row | undefined, mode: (typeof TP_MODES)[number]) {
     inPeriod,
     /** Kuota khusus nasabah; null = ikut kuota global. */
     customAllowance: row.custom_allowance === null || row.custom_allowance === undefined ? null : num(row.custom_allowance),
+    /** Token khusus tanpa batas. */
+    unlimited: row.unlimited === true,
   };
 }
 
@@ -751,7 +753,10 @@ router.get("/admin/trade-pilot/users/:userId", requireAdmin, handler(async (req,
 const creditAdjustmentBody = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reset") }),
   z.object({ action: z.literal("set"), remaining: z.number().int().min(0).max(1000) }),
-  z.object({ action: z.literal("custom"), allowance: z.number().int().min(0).max(10_000).nullable() }),
+  z.object({
+    action: z.literal("custom"),
+    allowance: z.union([z.number().int().min(0).max(10_000), z.literal("unlimited")]).nullable(),
+  }),
 ]);
 
 router.post("/admin/trade-pilot/users/:userId/credits/:mode", requireSuperAdmin, handler(async (req, res) => {
@@ -784,8 +789,8 @@ router.post("/admin/trade-pilot/users/:userId/credits/:mode", requireSuperAdmin,
         requestId: typeof req.id === "string" || typeof req.id === "number" ? String(req.id) : null,
         details: {
           mode: mode.data,
-          before: { allowance: change.before.allowance, consumed: change.before.consumed, customAllowance: change.before.customAllowance },
-          after: { allowance: change.after.allowance, consumed: change.after.consumed, customAllowance: change.after.customAllowance },
+          before: { allowance: change.before.allowance, consumed: change.before.consumed, customAllowance: change.before.customAllowance, unlimited: change.before.unlimited },
+          after: { allowance: change.after.allowance, consumed: change.after.consumed, customAllowance: change.after.customAllowance, unlimited: change.after.unlimited },
           ...(body.data.action === "set" ? { remaining: body.data.remaining } : {}),
         },
       });
@@ -801,6 +806,7 @@ router.post("/admin/trade-pilot/users/:userId/credits/:mode", requireSuperAdmin,
       resetsAt: result.after.resetsAt,
       inPeriod: true,
       customAllowance: result.after.customAllowance,
+      unlimited: result.after.unlimited,
     },
   });
 }));
@@ -820,7 +826,7 @@ router.get("/admin/trade-pilot/credits-alerts", requireAdmin, handler(async (req
       count(*) filter (where resets_at > now()) as users_in_period,
       coalesce(sum(consumed) filter (where resets_at > now()), 0) as consumed,
       coalesce(sum(allowance) filter (where resets_at > now()), 0) as allowance,
-      count(*) filter (where resets_at > now() and consumed >= allowance) as exhausted,
+      count(*) filter (where resets_at > now() and consumed >= allowance and not unlimited) as exhausted,
       count(*) filter (where resets_at > now() and consumed > 0 and consumed < allowance) as partially_used
     from tp_credit_balance group by mode
   `);
@@ -828,7 +834,7 @@ router.get("/admin/trade-pilot/credits-alerts", requireAdmin, handler(async (req
   const exhausted = await rows(sql`
     select user_id, mode, allowance, consumed, resets_at, updated_at
     from tp_credit_balance
-    where resets_at > now() and consumed >= allowance
+    where resets_at > now() and consumed >= allowance and not unlimited
     order by updated_at desc limit 50
   `);
 

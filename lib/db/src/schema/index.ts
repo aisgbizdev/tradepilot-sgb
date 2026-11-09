@@ -1322,6 +1322,8 @@ export const tradePilotCreditBalances = pgTable("tp_credit_balance", {
   allowance: integer("allowance").notNull(),
   /** Kuota khusus nasabah (super_admin); null = ikut kuota global. Dipakai tiap reset. */
   customAllowance: integer("custom_allowance"),
+  /** Token khusus tanpa batas (super_admin): jumlah & masa berlaku tidak dibatasi. */
+  unlimited: boolean("unlimited").notNull().default(false),
   consumed: integer("consumed").notNull().default(0),
   periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
   resetsAt: timestamp("resets_at", { withTimezone: true }).notNull(),

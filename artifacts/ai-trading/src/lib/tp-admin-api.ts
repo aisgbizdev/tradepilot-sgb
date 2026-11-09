@@ -135,6 +135,8 @@ export type CreditView = {
   inPeriod: boolean;
   /** Kuota khusus nasabah (tetap tiap reset); null = ikut kuota global. */
   customAllowance?: number | null;
+  /** Token khusus tanpa batas (jumlah & masa berlaku demo). */
+  unlimited?: boolean;
 } | null;
 
 export type UserRow = {
@@ -277,7 +279,7 @@ export async function lookupUserByEmail(email: string): Promise<EmailLookupResul
 export type CreditAdjustment =
   | { action: "reset" }
   | { action: "set"; remaining: number }
-  | { action: "custom"; allowance: number | null };
+  | { action: "custom"; allowance: number | null | "unlimited" };
 
 /** Khusus super_admin: ubah kredit periode berjalan untuk satu pengguna & mode. */
 export async function adjustUserCredit(userId: string, mode: Mode, adjustment: CreditAdjustment) {

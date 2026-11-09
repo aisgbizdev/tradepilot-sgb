@@ -324,18 +324,25 @@ export function creditTrialEndsAt(mode: TradePilotMode, trialStartedAt: Date | n
   return new Date(wibMidnightOf(first.year, first.month, first.day) + days * DAY);
 }
 
+/** Nilai allowance/remaining yang dikirim untuk token unlimited (klien membaca `unlimited`). */
+export const UNLIMITED_CREDIT_DISPLAY = 9999;
+
 function creditView(
   mode: TradePilotMode,
-  row: { allowance: number; consumed: number; resetsAt: Date; trialStartedAt?: Date | null },
+  row: { allowance: number; consumed: number; resetsAt: Date; trialStartedAt?: Date | null; unlimited?: boolean | null },
   now = new Date(),
 ) {
-  const trialEndsAt = creditTrialEndsAt(mode, row.trialStartedAt);
+  const unlimited = row.unlimited === true;
+  // Token unlimited tidak dibatasi masa berlaku maupun jumlah.
+  const trialEndsAt = unlimited ? null : creditTrialEndsAt(mode, row.trialStartedAt);
   const expired = trialEndsAt !== null && trialEndsAt.getTime() <= now.getTime();
   return {
     mode,
-    allowance: row.allowance,
+    allowance: unlimited ? UNLIMITED_CREDIT_DISPLAY : row.allowance,
     consumed: row.consumed,
-    remaining: expired ? 0 : Math.max(0, row.allowance - row.consumed),
+    remaining: unlimited ? UNLIMITED_CREDIT_DISPLAY : expired ? 0 : Math.max(0, row.allowance - row.consumed),
+    /** Token khusus tanpa batas yang diatur super_admin per nasabah. */
+    unlimited,
     // Tetap string saat expired (klien lama mewajibkan string); klien baru
     // membaca `expired` dan tidak menampilkan jadwal reset.
     resetsAt: configuredPeriod(mode) === "never" ? null : row.resetsAt.toISOString(),
@@ -358,8 +365,8 @@ export async function getTradePilotCredit(userId: string, mode: TradePilotMode) 
 export type TradePilotCreditAdjustment =
   | { type: "reset" }
   | { type: "set"; remaining: number }
-  /** Kuota khusus permanen (tiap reset); null = kembali ke kuota global. */
-  | { type: "custom"; allowance: number | null };
+  /** Kuota khusus permanen (tiap reset); null = kembali ke global; "unlimited" = tanpa batas. */
+  | { type: "custom"; allowance: number | null | "unlimited" };
 
 /**
  * Penyesuaian kredit oleh super_admin untuk PERIODE BERJALAN saja.
@@ -376,6 +383,7 @@ export type TradePilotCreditAdjustment =
 type CreditAdjustmentResult = {
   before: ReturnType<typeof creditView> & { customAllowance: number | null };
   after: ReturnType<typeof creditView> & { customAllowance: number | null };
+  /* `unlimited` sudah termasuk di creditView. */
 };
 
 export async function adjustTradePilotCredit(
@@ -399,7 +407,9 @@ export async function adjustTradePilotCredit(
     const next = adjustment.type === "reset"
       ? { allowance: row.customAllowance ?? allowance(mode), consumed: 0, trialStartedAt: new Date() }
       : adjustment.type === "custom"
-        ? { customAllowance: adjustment.allowance, allowance: adjustment.allowance ?? allowance(mode) }
+        ? adjustment.allowance === "unlimited"
+          ? { unlimited: true, customAllowance: null }
+          : { unlimited: false, customAllowance: adjustment.allowance, allowance: adjustment.allowance ?? allowance(mode) }
         : { allowance: row.consumed + adjustment.remaining, consumed: row.consumed };
     const [updated] = await tx.update(tradePilotCreditBalances)
       .set({ ...next, updatedAt: new Date() })
@@ -873,7 +883,7 @@ export async function createTradePilotAnalysis(input: {
     )).limit(1);
     if (!credit) throw new TradePilotServiceError("insufficient_credit", 402);
     if (creditView(input.mode, credit, now).expired) throw new TradePilotServiceError("trial_expired", 403);
-    if (credit.consumed >= credit.allowance) throw new TradePilotServiceError("insufficient_credit", 402);
+    if (!credit.unlimited && credit.consumed >= credit.allowance) throw new TradePilotServiceError("insufficient_credit", 402);
     const [row] = await tx.insert(tradePilotAnalyses).values({
       id, userId: input.userId, mode: input.mode,
       instrumentId: input.instrumentId, instrumentLabel: instrument.label,
@@ -896,7 +906,8 @@ export async function createTradePilotAnalysis(input: {
     }).where(and(
       eq(tradePilotCreditBalances.userId, input.userId),
       eq(tradePilotCreditBalances.mode, input.mode),
-      sql`${tradePilotCreditBalances.consumed} < ${tradePilotCreditBalances.allowance}`,
+      // Token unlimited tetap mencatat pemakaian, tanpa batas atas.
+      credit.unlimited ? undefined : sql`${tradePilotCreditBalances.consumed} < ${tradePilotCreditBalances.allowance}`,
     )).returning();
     if (!updatedCredit) throw new TradePilotServiceError("insufficient_credit", 402);
     const stored = {

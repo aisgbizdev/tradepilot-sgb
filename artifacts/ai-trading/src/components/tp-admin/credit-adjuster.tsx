@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, RotateCcw, Save } from "lucide-react";
+import { Infinity as InfinityIcon, Loader2, RotateCcw, Save } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { AdminApiError, adjustUserCredit, fill, formatDateTime, type CreditView, type Mode } from "@/lib/tp-admin-api";
 import { ModeBadge, Panel } from "./ui";
@@ -13,10 +13,10 @@ function CreditRow({ userId, mode, credit }: { userId: string; mode: Mode; credi
   const [custom, setCustom] = useState(
     credit?.customAllowance === null || credit?.customAllowance === undefined ? "" : String(credit.customAllowance),
   );
-  const [pending, setPending] = useState<"reset" | "set" | "custom" | "global" | null>(null);
+  const [pending, setPending] = useState<"reset" | "set" | "custom" | "global" | "unlimited" | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
-  const run = async (kind: "reset" | "set" | "custom" | "global") => {
+  const run = async (kind: "reset" | "set" | "custom" | "global" | "unlimited") => {
     setPending(kind);
     setMessage(null);
     try {
@@ -29,7 +29,9 @@ function CreditRow({ userId, mode, credit }: { userId: string; mode: Mode; credi
             ? { action: "custom", allowance: Number(custom) }
             : kind === "global"
               ? { action: "custom", allowance: null }
-              : { action: "set", remaining: Number(remaining) },
+              : kind === "unlimited"
+                ? { action: "custom", allowance: "unlimited" }
+                : { action: "set", remaining: Number(remaining) },
       );
       setRemaining(String(result.credit.remaining));
       const nextCustom = result.credit.customAllowance;
@@ -52,7 +54,8 @@ function CreditRow({ userId, mode, credit }: { userId: string; mode: Mode; credi
     void run("custom");
   };
 
-  const hasCustom = credit?.customAllowance !== null && credit?.customAllowance !== undefined;
+  const isUnlimited = credit?.unlimited === true;
+  const hasCustom = isUnlimited || (credit?.customAllowance !== null && credit?.customAllowance !== undefined);
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -67,7 +70,11 @@ function CreditRow({ userId, mode, credit }: { userId: string; mode: Mode; credi
         <div className="flex items-center gap-2">
           <ModeBadge mode={mode} />
           <span className="tabular text-sm text-foreground">
-            {credit ? `${credit.consumed}/${credit.allowance} ${t.tpAdmin.credit_used}` : t.tpAdmin.no_balance}
+            {!credit
+              ? t.tpAdmin.no_balance
+              : isUnlimited
+                ? fill(t.tpAdmin.credit_unlimited_used, { n: credit.consumed })
+                : `${credit.consumed}/${credit.allowance} ${t.tpAdmin.credit_used}`}
           </span>
           {credit?.resetsAt ? (
             <span className="text-xs text-muted-foreground">
@@ -78,9 +85,11 @@ function CreditRow({ userId, mode, credit }: { userId: string; mode: Mode; credi
             className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${hasCustom ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}
             data-testid={`badge-credit-quota-${mode}`}
           >
-            {hasCustom
-              ? fill(t.tpAdmin.credit_custom_badge, { n: credit!.customAllowance! })
-              : t.tpAdmin.credit_global_badge}
+            {isUnlimited
+              ? t.tpAdmin.credit_unlimited_badge
+              : hasCustom
+                ? fill(t.tpAdmin.credit_custom_badge, { n: credit!.customAllowance! })
+                : t.tpAdmin.credit_global_badge}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -159,6 +168,18 @@ function CreditRow({ userId, mode, credit }: { userId: string; mode: Mode; credi
             {pending === "custom" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             {t.tpAdmin.credit_custom_save}
           </button>
+          {!isUnlimited ? (
+            <button
+              type="button"
+              disabled={pending !== null}
+              onClick={() => void run("unlimited")}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/40 px-2.5 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:opacity-50"
+              data-testid={`button-credit-unlimited-${mode}`}
+            >
+              {pending === "unlimited" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <InfinityIcon className="h-3.5 w-3.5" />}
+              {t.tpAdmin.credit_unlimited_set}
+            </button>
+          ) : null}
           {hasCustom ? (
             <button
               type="button"
@@ -173,6 +194,7 @@ function CreditRow({ userId, mode, credit }: { userId: string; mode: Mode; credi
           ) : null}
         </div>
         <p className="mt-1.5 text-[11px] text-muted-foreground">{t.tpAdmin.credit_custom_hint}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{t.tpAdmin.credit_unlimited_hint}</p>
       </form>
       {message ? (
         <p
@@ -196,7 +218,7 @@ export function CreditAdjuster({ userId, credits }: { userId: string; credits: N
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {(["demo", "real"] as const).map((mode) => (
           <CreditRow
-            key={`${mode}-${credits.find((c) => c.mode === mode)?.allowance ?? "none"}-${credits.find((c) => c.mode === mode)?.consumed ?? "none"}-${credits.find((c) => c.mode === mode)?.customAllowance ?? "global"}`}
+            key={`${mode}-${credits.find((c) => c.mode === mode)?.allowance ?? "none"}-${credits.find((c) => c.mode === mode)?.consumed ?? "none"}-${credits.find((c) => c.mode === mode)?.customAllowance ?? "global"}-${credits.find((c) => c.mode === mode)?.unlimited ? "unl" : ""}`}
             userId={userId}
             mode={mode}
             credit={credits.find((c) => c.mode === mode)}
